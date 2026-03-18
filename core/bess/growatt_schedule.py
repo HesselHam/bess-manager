@@ -668,7 +668,7 @@ class GrowattScheduleManager:
 
             elif intent == "IDLE":
                 grid_charge = False
-                discharge_rate = 0
+                discharge_rate = 100
                 charge_rate = 100
                 state = "idle"
                 batt_mode = self.INTENT_TO_MODE["IDLE"]

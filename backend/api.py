@@ -1432,6 +1432,85 @@ async def get_growatt_detailed_schedule():
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.get("/api/period_details")
+async def get_period_details():
+    """Get detailed per-15-minute period data for decision transparency."""
+    from app import bess_controller
+
+    try:
+        system = bess_controller.system
+        stored = system.schedule_store.get_latest_schedule()
+
+        if stored is None:
+            return {"periods": [], "optimizationPeriod": None, "optimizationTimestamp": None}
+
+        result = stored.optimization_result
+        schedule_manager = system._schedule_manager
+
+        now = datetime.now()
+        current_period = now.hour * 4 + now.minute // 15
+
+        periods = []
+        for period_data in result.period_data:
+            period = period_data.period  # absolute period index (already set by _add_timestamps_to_period_data)
+            display_period = period % 96   # map tomorrow's periods (96-191) back to 0-95 for time display
+            hour = display_period // 4
+            minute = (display_period % 4) * 15
+            time_str = f"{hour:02d}:{minute:02d}"
+
+            intent = period_data.decision.strategic_intent
+            control = schedule_manager.INTENT_TO_CONTROL.get(
+                intent, {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100}
+            )
+            mode = schedule_manager.INTENT_TO_MODE.get(intent, "load_first")
+
+            periods.append(
+                {
+                    "period": period,
+                    "time": time_str,
+                    "dataSource": period_data.data_source,
+                    "isCurrent": period == current_period,
+                    "buyPrice": round(period_data.economic.buy_price, 4),
+                    "sellPrice": round(period_data.economic.sell_price, 4),
+                    "solarForecast": round(period_data.energy.solar_production, 3),
+                    "consumptionForecast": round(period_data.energy.home_consumption, 3),
+                    "soeStart": round(period_data.energy.battery_soe_start, 2),
+                    "soeEnd": round(period_data.energy.battery_soe_end, 2),
+                    "costBasis": round(period_data.decision.cost_basis, 4),
+                    "strategicIntent": intent,
+                    "batteryAction": round(period_data.decision.battery_action or 0.0, 3),
+                    "batteryMode": mode,
+                    "gridCharge": control["grid_charge"],
+                    "chargeRate": control["charge_rate"],
+                    "dischargeRate": control["discharge_rate"],
+                    "gridImported": round(period_data.energy.grid_imported, 3),
+                    "gridExported": round(period_data.energy.grid_exported, 3),
+                    "solarToHome": round(period_data.energy.solar_to_home, 3),
+                    "solarToBattery": round(period_data.energy.solar_to_battery, 3),
+                    "solarToGrid": round(period_data.energy.solar_to_grid, 3),
+                    "gridToHome": round(period_data.energy.grid_to_home, 3),
+                    "gridToBattery": round(period_data.energy.grid_to_battery, 3),
+                    "batteryToHome": round(period_data.energy.battery_to_home, 3),
+                    "batteryToGrid": round(period_data.energy.battery_to_grid, 3),
+                    "hourlyCost": round(period_data.economic.hourly_cost, 4),
+                    "gridOnlyCost": round(period_data.economic.grid_only_cost, 4),
+                    "hourlySavings": round(period_data.economic.hourly_savings, 4),
+                    "batteryCycleCost": round(period_data.economic.battery_cycle_cost, 4),
+                }
+            )
+
+        return {
+            "periods": periods,
+            "optimizationPeriod": stored.optimization_period,
+            "optimizationTimestamp": stored.timestamp.isoformat(),
+            "currentPeriod": current_period,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in get_period_details: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.get("/api/growatt/tou_settings")
 async def get_tou_settings():
     """Get current TOU (Time of Use) settings with strategic intent information."""

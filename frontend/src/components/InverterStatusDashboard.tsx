@@ -82,6 +82,46 @@ interface PeriodGroup {
   gridCharge: boolean;
 }
 
+interface PeriodDetail {
+  period: number;
+  time: string;
+  dataSource: string;
+  isCurrent: boolean;
+  buyPrice: number;
+  sellPrice: number;
+  solarForecast: number;
+  consumptionForecast: number;
+  soeStart: number;
+  soeEnd: number;
+  costBasis: number;
+  strategicIntent: string;
+  batteryAction: number;
+  batteryMode: string;
+  gridCharge: boolean;
+  chargeRate: number;
+  dischargeRate: number;
+  gridImported: number;
+  gridExported: number;
+  solarToHome: number;
+  solarToBattery: number;
+  solarToGrid: number;
+  gridToHome: number;
+  gridToBattery: number;
+  batteryToHome: number;
+  batteryToGrid: number;
+  hourlyCost: number;
+  gridOnlyCost: number;
+  hourlySavings: number;
+  batteryCycleCost: number;
+}
+
+interface PeriodDetailsResponse {
+  periods: PeriodDetail[];
+  optimizationPeriod: number | null;
+  optimizationTimestamp: string | null;
+  currentPeriod: number;
+}
+
 interface GrowattSchedule {
   currentHour: number;
   touIntervals: TOUInterval[];
@@ -277,6 +317,8 @@ const InverterStatusDashboard: React.FC = () => {
   const [growattSchedule, setGrowattSchedule] = useState<GrowattSchedule | null>(null);
   const [batterySettings, setBatterySettings] = useState<BatterySettings | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [periodDetails, setPeriodDetails] = useState<PeriodDetailsResponse | null>(null);
+  const [showPeriodDetails, setShowPeriodDetails] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
@@ -322,6 +364,11 @@ const InverterStatusDashboard: React.FC = () => {
     });
     return response.data;
   };
+
+  const fetchPeriodDetails = async (): Promise<PeriodDetailsResponse> => {
+    const response = await api.get('/api/period_details');
+    return response.data;
+  };
   
   const loadData = async (isManualRefresh = false): Promise<void> => {
     try {
@@ -334,7 +381,8 @@ const InverterStatusDashboard: React.FC = () => {
         fetchInverterStatus(),
         fetchGrowattSchedule(),
         fetchBatterySettings(),
-        fetchDashboardData()
+        fetchDashboardData(),
+        fetchPeriodDetails()
       ]);
 
       if (results[0].status === 'fulfilled') {
@@ -356,6 +404,11 @@ const InverterStatusDashboard: React.FC = () => {
         setDashboardData(results[3].value);
       } else {
         console.warn('Failed to fetch dashboard data:', results[3].reason);
+      }
+      if (results[4].status === 'fulfilled') {
+        setPeriodDetails(results[4].value);
+      } else {
+        console.warn('Failed to fetch period details:', results[4].reason);
       }
 
       setLastUpdate(new Date());
@@ -861,6 +914,159 @@ const InverterStatusDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="text-gray-500 dark:text-gray-400 text-sm">No schedule data available</div>
+          )}
+        </div>
+      </div>
+
+      {/* Decision Details - per 15-min period transparency table */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="p-6">
+          <button
+            className="flex items-center w-full text-left"
+            onClick={() => setShowPeriodDetails(v => !v)}
+          >
+            <Calendar className="h-5 w-5 text-purple-600 mr-2" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex-1">
+              Decision Details (15-min resolution)
+            </h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400 mr-3">
+              {periodDetails?.periods.length ?? 0} periodes
+            </span>
+            <span className="text-gray-400 text-sm">{showPeriodDetails ? '▲' : '▼'}</span>
+          </button>
+
+          {showPeriodDetails && (
+            <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+              {periodDetails && periodDetails.periods.length > 0 ? (
+                <table className="min-w-full text-xs divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                    <tr>
+                      {/* Tijd */}
+                      <th className="px-2 py-2 text-left font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Tijd</th>
+                      <th className="px-2 py-2 text-left font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Bron</th>
+                      {/* Prijzen */}
+                      <th className="px-2 py-2 text-right font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">Inkoop</th>
+                      <th className="px-2 py-2 text-right font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">Verkoop</th>
+                      {/* Forecast */}
+                      <th className="px-2 py-2 text-right font-semibold text-yellow-600 dark:text-yellow-400 whitespace-nowrap">Solar</th>
+                      <th className="px-2 py-2 text-right font-semibold text-yellow-600 dark:text-yellow-400 whitespace-nowrap">Verbruik</th>
+                      {/* Batterij */}
+                      <th className="px-2 py-2 text-right font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">SOE↑</th>
+                      <th className="px-2 py-2 text-right font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">SOE↓</th>
+                      <th className="px-2 py-2 text-right font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">Kostprijs</th>
+                      {/* Beslissing */}
+                      <th className="px-2 py-2 text-left font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Intent</th>
+                      <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Actie</th>
+                      <th className="px-2 py-2 text-left font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Mode</th>
+                      <th className="px-2 py-2 text-center font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">GridChg</th>
+                      <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Chg%</th>
+                      <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Dchg%</th>
+                      {/* Flows */}
+                      <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Grid↓</th>
+                      <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Grid↑</th>
+                      {/* Kosten */}
+                      <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">Kosten</th>
+                      <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">Baseline</th>
+                      <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">Besparing</th>
+                    </tr>
+                    <tr className="text-gray-400 dark:text-gray-500">
+                      <td className="px-2 pb-1"></td>
+                      <td className="px-2 pb-1"></td>
+                      <td className="px-2 pb-1 text-right">SEK/kWh</td>
+                      <td className="px-2 pb-1 text-right">SEK/kWh</td>
+                      <td className="px-2 pb-1 text-right">kWh</td>
+                      <td className="px-2 pb-1 text-right">kWh</td>
+                      <td className="px-2 pb-1 text-right">kWh</td>
+                      <td className="px-2 pb-1 text-right">kWh</td>
+                      <td className="px-2 pb-1 text-right">SEK/kWh</td>
+                      <td className="px-2 pb-1"></td>
+                      <td className="px-2 pb-1 text-right">kWh</td>
+                      <td className="px-2 pb-1"></td>
+                      <td className="px-2 pb-1 text-center"></td>
+                      <td className="px-2 pb-1 text-right">%</td>
+                      <td className="px-2 pb-1 text-right">%</td>
+                      <td className="px-2 pb-1 text-right">kWh</td>
+                      <td className="px-2 pb-1 text-right">kWh</td>
+                      <td className="px-2 pb-1 text-right">SEK</td>
+                      <td className="px-2 pb-1 text-right">SEK</td>
+                      <td className="px-2 pb-1 text-right">SEK</td>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
+                    {periodDetails.periods.map((p) => {
+                      const intentColors: Record<string, string> = {
+                        GRID_CHARGING: 'text-blue-700 dark:text-blue-400',
+                        SOLAR_STORAGE: 'text-yellow-700 dark:text-yellow-400',
+                        LOAD_SUPPORT: 'text-green-700 dark:text-green-400',
+                        EXPORT_ARBITRAGE: 'text-red-700 dark:text-red-400',
+                        IDLE: 'text-gray-500 dark:text-gray-400',
+                      };
+                      const intentColor = intentColors[p.strategicIntent] ?? 'text-gray-500';
+                      const rowBg = p.isCurrent
+                        ? 'bg-blue-50 dark:bg-blue-900/30'
+                        : p.dataSource === 'actual'
+                        ? 'bg-green-50/40 dark:bg-green-900/10'
+                        : '';
+
+                      const fmt = (v: number, d = 3) => v === 0 ? '—' : v.toFixed(d);
+                      const fmtCost = (v: number) => v === 0 ? '—' : v.toFixed(4);
+
+                      return (
+                        <tr key={p.period} className={`${rowBg} hover:bg-gray-50 dark:hover:bg-gray-700/50`}>
+                          <td className="px-2 py-1 font-mono font-medium whitespace-nowrap">
+                            {p.time}
+                            {p.isCurrent && <span className="ml-1 text-blue-600 font-bold">◀</span>}
+                          </td>
+                          <td className="px-2 py-1 whitespace-nowrap">
+                            <span className={`px-1 py-0.5 rounded text-gray-500 dark:text-gray-400 ${p.dataSource === 'actual' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                              {p.dataSource === 'actual' ? 'act' : 'prv'}
+                            </span>
+                          </td>
+                          {/* Prijzen */}
+                          <td className="px-2 py-1 text-right font-mono">{p.buyPrice.toFixed(4)}</td>
+                          <td className="px-2 py-1 text-right font-mono">{p.sellPrice.toFixed(4)}</td>
+                          {/* Forecast */}
+                          <td className="px-2 py-1 text-right font-mono text-yellow-700 dark:text-yellow-400">{fmt(p.solarForecast)}</td>
+                          <td className="px-2 py-1 text-right font-mono">{fmt(p.consumptionForecast)}</td>
+                          {/* Batterij */}
+                          <td className="px-2 py-1 text-right font-mono text-green-700 dark:text-green-400">{p.soeStart.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-green-700 dark:text-green-400">{p.soeEnd.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{p.costBasis.toFixed(4)}</td>
+                          {/* Beslissing */}
+                          <td className={`px-2 py-1 whitespace-nowrap font-medium ${intentColor}`}>
+                            {p.strategicIntent.replace('_', ' ')}
+                          </td>
+                          <td className={`px-2 py-1 text-right font-mono font-semibold ${p.batteryAction > 0 ? 'text-blue-700 dark:text-blue-400' : p.batteryAction < 0 ? 'text-orange-700 dark:text-orange-400' : 'text-gray-400'}`}>
+                            {p.batteryAction === 0 ? '—' : (p.batteryAction > 0 ? '+' : '') + p.batteryAction.toFixed(3)}
+                          </td>
+                          <td className="px-2 py-1 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                            {p.batteryMode === 'battery_first' ? 'Bat1st' : p.batteryMode === 'grid_first' ? 'Grid1st' : 'Load1st'}
+                          </td>
+                          <td className="px-2 py-1 text-center">
+                            {p.gridCharge ? <span className="text-blue-600">✓</span> : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{p.chargeRate}</td>
+                          <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{p.dischargeRate}</td>
+                          {/* Flows */}
+                          <td className="px-2 py-1 text-right font-mono text-orange-700 dark:text-orange-400">{fmt(p.gridImported)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-teal-700 dark:text-teal-400">{fmt(p.gridExported)}</td>
+                          {/* Kosten */}
+                          <td className="px-2 py-1 text-right font-mono">{fmtCost(p.hourlyCost)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-gray-400">{fmtCost(p.gridOnlyCost)}</td>
+                          <td className={`px-2 py-1 text-right font-mono font-semibold ${p.hourlySavings > 0 ? 'text-green-700 dark:text-green-400' : p.hourlySavings < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
+                            {p.hourlySavings === 0 ? '—' : (p.hourlySavings > 0 ? '+' : '') + p.hourlySavings.toFixed(4)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-4 text-gray-500 dark:text-gray-400 text-sm">
+                  Geen optimaliseringsdata beschikbaar
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

@@ -2,6 +2,84 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Fork-Specific Fixes
+
+## InfluxDB & Consumption Strategy
+
+### Setup
+
+InfluxDB is configured and running:
+
+- URL: `http://homeassistant.local:8086/api/v2/query`
+- Bucket: `homeassistant/autogen` (InfluxDB 1.x with Flux compatibility)
+- Username: `homeassistantinflux`
+
+### Consumption strategies
+
+Three strategies exist in `HomeSettings.consumption_strategy`:
+
+- `sensor` — reads `48h_avg_grid_import` from HA (flat profile, grid import only)
+- `fixed` — uses `default_hourly / 4.0` kWh for all 96 periods
+- `influxdb_7d_avg` — queries past 7 days of `local_load_power` from InfluxDB, averages per 15-min slot → real hourly pattern
+
+### How influxdb_7d_avg works
+
+BESS never writes to InfluxDB. Data comes from the HA InfluxDB integration writing sensor states automatically. At each optimization run, BESS:
+
+1. Queries `local_load_power` sensor for each of the past 7 days (one Flux query per day)
+2. Averages all W readings within each 15-min window → converts to kWh (`W * 0.25 / 1000`)
+3. Averages across all valid days (needs ≥ 48 periods per day)
+4. Returns 96 kWh values as `home_consumption` input to the DP algorithm
+
+Falls back to `fixed` if fewer than one valid day is available.
+
+### Required sensor
+
+The sensor used is configured in `config.yaml` under `sensors.local_load_power`:
+
+```yaml
+local_load_power: "sensor.growatt_min_3600tl_xh_local_load_power"
+```
+
+This same sensor is already used for realtime power monitoring — no extra configuration needed.
+
+### Visibility
+
+`consumptionStrategy` is defined in `types.ts` and returned by the settings API, but is **not displayed anywhere in the frontend UI**.
+
+### Verification query (InfluxDB Flux)
+
+To see the exact 96-value profile BESS would use:
+
+```flux
+import "date"
+
+from(bucket: "homeassistant/autogen")
+  |> range(start: -7d)
+  |> filter(fn: (r) =>
+      r["_measurement"] == "sensor.growatt_min_3600tl_xh_local_load_power" or
+      r["entity_id"] == "growatt_min_3600tl_xh_local_load_power"
+  )
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+  |> map(fn: (r) => ({
+      r with
+      _value: r._value * 0.25 / 1000.0,
+      hour:   date.hour(t: r._time),
+      minute: date.minute(t: r._time)
+  }))
+  |> group(columns: ["hour", "minute"])
+  |> mean(column: "_value")
+  |> sort(columns: ["hour", "minute"])
+```
+
+## Fork Rules
+
+1. This is a fork of johanzander/bess-manager. Never push to upstream.
+2. Only ever push to origin HesselHam/bess-manager.
+3. Never create pull requests to johanzander/bess-manager.
+4. All changes stay within HesselHam/bess-manager.
+
 ## Project Overview
 
 BESS Battery Manager is a Home Assistant add-on for optimizing battery energy storage systems. It provides price-based optimization, solar integration, and comprehensive web interface for managing battery schedules and monitoring energy flows.

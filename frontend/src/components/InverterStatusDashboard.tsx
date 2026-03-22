@@ -113,6 +113,13 @@ interface PeriodDetail {
   gridOnlyCost: number;
   hourlySavings: number;
   batteryCycleCost: number;
+  // Actual values from historical store (null for current/future periods)
+  actualGridImported: number | null;
+  actualGridExported: number | null;
+  actualSolarProduction: number | null;
+  actualBatteryCharged: number | null;
+  actualBatteryDischarged: number | null;
+  actualHourlyCost: number | null;
 }
 
 interface PeriodDetailsResponse {
@@ -949,7 +956,7 @@ const InverterStatusDashboard: React.FC = () => {
                       <th className="px-2 py-2 text-right font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">Verkoop</th>
                       {/* Forecast */}
                       <th className="px-2 py-2 text-right font-semibold text-yellow-600 dark:text-yellow-400 whitespace-nowrap">Solar</th>
-                      <th className="px-2 py-2 text-right font-semibold text-yellow-600 dark:text-yellow-400 whitespace-nowrap">Verbruik</th>
+                      <th className="px-2 py-2 text-right font-semibold text-yellow-600 dark:text-yellow-400 whitespace-nowrap" title="plan / werkelijk">Verbruik</th>
                       {/* Batterij */}
                       <th className="px-2 py-2 text-right font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">SOE↑</th>
                       <th className="px-2 py-2 text-right font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">SOE↓</th>
@@ -962,10 +969,10 @@ const InverterStatusDashboard: React.FC = () => {
                       <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Chg%</th>
                       <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Dchg%</th>
                       {/* Flows */}
-                      <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Grid↓</th>
-                      <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Grid↑</th>
+                      <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap" title="plan / werkelijk kWh">Grid↓</th>
+                      <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap" title="plan / werkelijk kWh">Grid↑</th>
                       {/* Kosten */}
-                      <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">Kosten</th>
+                      <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk SEK">Kosten</th>
                       <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">Baseline</th>
                       <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">Besparing</th>
                     </tr>
@@ -985,9 +992,9 @@ const InverterStatusDashboard: React.FC = () => {
                       <td className="px-2 pb-1 text-center"></td>
                       <td className="px-2 pb-1 text-right">%</td>
                       <td className="px-2 pb-1 text-right">%</td>
-                      <td className="px-2 pb-1 text-right">kWh</td>
-                      <td className="px-2 pb-1 text-right">kWh</td>
-                      <td className="px-2 pb-1 text-right">SEK</td>
+                      <td className="px-2 pb-1 text-right">plan/act kWh</td>
+                      <td className="px-2 pb-1 text-right">plan/act kWh</td>
+                      <td className="px-2 pb-1 text-right">plan/act SEK</td>
                       <td className="px-2 pb-1 text-right">SEK</td>
                       <td className="px-2 pb-1 text-right">SEK</td>
                     </tr>
@@ -1010,6 +1017,16 @@ const InverterStatusDashboard: React.FC = () => {
 
                       const fmt = (v: number, d = 3) => v === 0 ? '—' : v.toFixed(d);
                       const fmtCost = (v: number) => v === 0 ? '—' : v.toFixed(4);
+                      const fmtDual = (planned: number, actual: number | null, d = 3) => {
+                        const fv = (v: number) => v === 0 ? '—' : v.toFixed(d);
+                        if (actual === null) return <>{fv(planned)}</>;
+                        return <><span className="text-gray-400 dark:text-gray-500">{fv(planned)}</span><span className="text-gray-300 dark:text-gray-600 mx-0.5">/</span><span className="font-medium">{fv(actual)}</span></>;
+                      };
+                      const fmtCostDual = (planned: number, actual: number | null) => {
+                        const fv = (v: number) => v === 0 ? '—' : v.toFixed(4);
+                        if (actual === null) return <>{fv(planned)}</>;
+                        return <><span className="text-gray-400 dark:text-gray-500">{fv(planned)}</span><span className="text-gray-300 dark:text-gray-600 mx-0.5">/</span><span className="font-medium">{fv(actual)}</span></>;
+                      };
 
                       return (
                         <tr key={p.period} className={`${rowBg} hover:bg-gray-50 dark:hover:bg-gray-700/50`}>
@@ -1026,7 +1043,7 @@ const InverterStatusDashboard: React.FC = () => {
                           <td className="px-2 py-1 text-right font-mono">{p.buyPrice.toFixed(4)}</td>
                           <td className="px-2 py-1 text-right font-mono">{p.sellPrice.toFixed(4)}</td>
                           {/* Forecast */}
-                          <td className="px-2 py-1 text-right font-mono text-yellow-700 dark:text-yellow-400">{fmt(p.solarForecast)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-yellow-700 dark:text-yellow-400">{fmtDual(p.solarForecast, p.actualSolarProduction)}</td>
                           <td className="px-2 py-1 text-right font-mono">{fmt(p.consumptionForecast)}</td>
                           {/* Batterij */}
                           <td className="px-2 py-1 text-right font-mono text-green-700 dark:text-green-400">{p.soeStart.toFixed(2)}</td>
@@ -1048,10 +1065,10 @@ const InverterStatusDashboard: React.FC = () => {
                           <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{p.chargeRate}</td>
                           <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{p.dischargeRate}</td>
                           {/* Flows */}
-                          <td className="px-2 py-1 text-right font-mono text-orange-700 dark:text-orange-400">{fmt(p.gridImported)}</td>
-                          <td className="px-2 py-1 text-right font-mono text-teal-700 dark:text-teal-400">{fmt(p.gridExported)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-orange-700 dark:text-orange-400">{fmtDual(p.gridImported, p.actualGridImported)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-teal-700 dark:text-teal-400">{fmtDual(p.gridExported, p.actualGridExported)}</td>
                           {/* Kosten */}
-                          <td className="px-2 py-1 text-right font-mono">{fmtCost(p.hourlyCost)}</td>
+                          <td className="px-2 py-1 text-right font-mono">{fmtCostDual(p.hourlyCost, p.actualHourlyCost)}</td>
                           <td className="px-2 py-1 text-right font-mono text-gray-400">{fmtCost(p.gridOnlyCost)}</td>
                           <td className={`px-2 py-1 text-right font-mono font-semibold ${p.hourlySavings > 0 ? 'text-green-700 dark:text-green-400' : p.hourlySavings < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
                             {p.hourlySavings === 0 ? '—' : (p.hourlySavings > 0 ? '+' : '') + p.hourlySavings.toFixed(4)}

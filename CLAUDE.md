@@ -4,6 +4,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork-Specific Fixes
 
+## Session 2026-03-19: Period Details Table + Dynamic Adjustment Research
+
+### What was built
+
+Added `/api/period_details` endpoint ([backend/api.py](backend/api.py)) that returns all 96-192 `PeriodData`
+entries with every parameter used by the DP algorithm: prices, solar, consumption, SOE start/end,
+cost basis, strategic intent, battery action, inverter control settings (mode/gridCharge/chargeRate/
+dischargeRate), energy flows, and economics per period.
+
+Frontend: collapsible "Decision Details (15-min resolution)" table in
+[frontend/src/components/InverterStatusDashboard.tsx](frontend/src/components/InverterStatusDashboard.tsx)
+— 20 columns, color-coded by category, current period highlighted, actual vs. predicted rows distinguished.
+
+### IDLE discharge_rate = 0 (not 100)
+
+IDLE intent must have `discharge_rate = 0` in ALL four locations:
+
+- `INTENT_TO_CONTROL["IDLE"]` in [core/bess/growatt_schedule.py](core/bess/growatt_schedule.py)
+- `.get()` fallback in the same file
+- `_calculate_hourly_settings_with_strategic_intents` IDLE branch
+- `_apply_period_schedule` IDLE branch in [core/bess/battery_system_manager.py](core/bess/battery_system_manager.py)
+
+This was reverted and released as v7.9.6 to force a fresh Docker build in HA Supervisor.
+
+### Optimization correctness (verified 2026-03-19)
+
+With 192 periods (2-day horizon) and only solar charging:
+
+- Cost basis constant at 0.0450 SEK/kWh = correct (cycle_cost only, no grid charge cost)
+- Single EXPORT_ARBITRAGE at 18:45 = correct (only peak sell window above cost basis)
+- Alternating LOAD_SUPPORT/IDLE at night = discretization artifact, not a bug (0.1 kWh SOE grid)
+- `min_action_profit_threshold` scales ×2.0 for 192-period horizon — monitor on low-spread days
+
+### Dynamic adjustment: proposals (not yet implemented)
+
+Current system: re-optimization every 15 min (full DP), charging power adjustment every 5 min
+(power monitor, fuse-based). Discharge rate is set once per period, not adjusted mid-period.
+
+Four proposals ranked by impact/complexity:
+
+1. **Recency-weighted consumption forecast** — blend 7-day avg with recent 4-8 actual periods
+   using `α × recent_avg + (1−α) × historical_avg[t]`. Infrastructure already exists in
+   `historical_store.get_today_periods()`. Change is in `_gather_optimization_data`.
+
+2. **PV correction factor on Solcast** — compute `actual_pv_now / solcast_forecast_now` (clip
+   to [0.5, 2.0]) and apply to the next N periods' solar forecast. Only apply within ~4 hour
+   horizon. Change is in `_gather_optimization_data`.
+
+3. **SOC drift trigger** — light background task every 2-3 min checks
+   `|actual_soc − planned_soe| > 5%` and triggers re-optimization outside the normal 15-min
+   schedule. Event-driven, not polling the full DP.
+
+4. **Export override at max SOC** — if SOC > 90% during SOLAR_STORAGE and sell price >
+   threshold, temporarily switch to export without rerunning DP. Simple rule layer on top of
+   existing schedule.
+
 ## InfluxDB & Consumption Strategy
 
 ### Setup

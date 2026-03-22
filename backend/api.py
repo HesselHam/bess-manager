@@ -1450,6 +1450,8 @@ async def get_period_details():
         now = datetime.now()
         current_period = now.hour * 4 + now.minute // 15
 
+        historical_store = system.historical_store
+
         periods = []
         for period_data in result.period_data:
             period = period_data.period  # absolute period index (already set by _add_timestamps_to_period_data)
@@ -1464,40 +1466,49 @@ async def get_period_details():
             )
             mode = schedule_manager.INTENT_TO_MODE.get(intent, "load_first")
 
-            periods.append(
-                {
-                    "period": period,
-                    "time": time_str,
-                    "dataSource": period_data.data_source,
-                    "isCurrent": period == current_period,
-                    "buyPrice": round(period_data.economic.buy_price, 4),
-                    "sellPrice": round(period_data.economic.sell_price, 4),
-                    "solarForecast": round(period_data.energy.solar_production, 3),
-                    "consumptionForecast": round(period_data.energy.home_consumption, 3),
-                    "soeStart": round(period_data.energy.battery_soe_start, 2),
-                    "soeEnd": round(period_data.energy.battery_soe_end, 2),
-                    "costBasis": round(period_data.decision.cost_basis, 4),
-                    "strategicIntent": intent,
-                    "batteryAction": round(period_data.decision.battery_action or 0.0, 3),
-                    "batteryMode": mode,
-                    "gridCharge": control["grid_charge"],
-                    "chargeRate": control["charge_rate"],
-                    "dischargeRate": control["discharge_rate"],
-                    "gridImported": round(period_data.energy.grid_imported, 3),
-                    "gridExported": round(period_data.energy.grid_exported, 3),
-                    "solarToHome": round(period_data.energy.solar_to_home, 3),
-                    "solarToBattery": round(period_data.energy.solar_to_battery, 3),
-                    "solarToGrid": round(period_data.energy.solar_to_grid, 3),
-                    "gridToHome": round(period_data.energy.grid_to_home, 3),
-                    "gridToBattery": round(period_data.energy.grid_to_battery, 3),
-                    "batteryToHome": round(period_data.energy.battery_to_home, 3),
-                    "batteryToGrid": round(period_data.energy.battery_to_grid, 3),
-                    "hourlyCost": round(period_data.economic.hourly_cost, 4),
-                    "gridOnlyCost": round(period_data.economic.grid_only_cost, 4),
-                    "hourlySavings": round(period_data.economic.hourly_savings, 4),
-                    "batteryCycleCost": round(period_data.economic.battery_cycle_cost, 4),
-                }
-            )
+            # For past periods, look up actual recorded values from historical store
+            actual = historical_store.get_period(period) if period < current_period else None
+
+            entry: dict = {
+                "period": period,
+                "time": time_str,
+                "dataSource": period_data.data_source,
+                "isCurrent": period == current_period,
+                "buyPrice": round(period_data.economic.buy_price, 4),
+                "sellPrice": round(period_data.economic.sell_price, 4),
+                "solarForecast": round(period_data.energy.solar_production, 3),
+                "consumptionForecast": round(period_data.energy.home_consumption, 3),
+                "soeStart": round(period_data.energy.battery_soe_start, 2),
+                "soeEnd": round(period_data.energy.battery_soe_end, 2),
+                "costBasis": round(period_data.decision.cost_basis, 4),
+                "strategicIntent": intent,
+                "batteryAction": round(period_data.decision.battery_action or 0.0, 3),
+                "batteryMode": mode,
+                "gridCharge": control["grid_charge"],
+                "chargeRate": control["charge_rate"],
+                "dischargeRate": control["discharge_rate"],
+                "gridImported": round(period_data.energy.grid_imported, 3),
+                "gridExported": round(period_data.energy.grid_exported, 3),
+                "solarToHome": round(period_data.energy.solar_to_home, 3),
+                "solarToBattery": round(period_data.energy.solar_to_battery, 3),
+                "solarToGrid": round(period_data.energy.solar_to_grid, 3),
+                "gridToHome": round(period_data.energy.grid_to_home, 3),
+                "gridToBattery": round(period_data.energy.grid_to_battery, 3),
+                "batteryToHome": round(period_data.energy.battery_to_home, 3),
+                "batteryToGrid": round(period_data.energy.battery_to_grid, 3),
+                "hourlyCost": round(period_data.economic.hourly_cost, 4),
+                "gridOnlyCost": round(period_data.economic.grid_only_cost, 4),
+                "hourlySavings": round(period_data.economic.hourly_savings, 4),
+                "batteryCycleCost": round(period_data.economic.battery_cycle_cost, 4),
+                # Actual values from historical store (None for future/current periods)
+                "actualGridImported": round(actual.energy.grid_imported, 3) if actual else None,
+                "actualGridExported": round(actual.energy.grid_exported, 3) if actual else None,
+                "actualSolarProduction": round(actual.energy.solar_production, 3) if actual else None,
+                "actualBatteryCharged": round(actual.energy.battery_charged, 3) if actual else None,
+                "actualBatteryDischarged": round(actual.energy.battery_discharged, 3) if actual else None,
+                "actualHourlyCost": round(actual.economic.hourly_cost, 4) if actual else None,
+            }
+            periods.append(entry)
 
         return {
             "periods": periods,

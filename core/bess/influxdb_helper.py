@@ -786,3 +786,197 @@ def _parse_power_batch_response(
     )
 
     return period_data
+
+
+def get_control_sensor_data_batch(control_sensors: list[str], target_date) -> dict:
+    """Fetch average state values per period for control entities (e.g., charge/discharge rate %).
+
+    Similar to get_power_sensor_data_batch but does not convert to kWh.
+    Returns the mean raw value per period.
+
+    Args:
+        control_sensors: List of entity IDs. Domain prefixes (sensor., number., etc.)
+            are stripped internally so both "number.entity" and "entity" formats work.
+        target_date: Date to fetch data for (datetime.date or datetime)
+
+    Returns:
+        dict: {
+            "status": "success" or "error",
+            "message": error message if status is "error",
+            "data": {
+                0: {"sensor.entity_id": avg_value, ...},
+                ...
+                95: {...}
+            }
+        }
+    """
+    local_tz = time_utils.TIMEZONE
+
+    if isinstance(target_date, datetime):
+        target_date = target_date.date()
+
+    start_datetime = datetime.combine(target_date, datetime.min.time()).replace(
+        tzinfo=local_tz
+    )
+    end_datetime = datetime.combine(target_date, datetime.max.time()).replace(
+        tzinfo=local_tz
+    )
+
+    influxdb_config = get_influxdb_config()
+    url = influxdb_config["url"]
+    bucket = influxdb_config["bucket"]
+    username = influxdb_config["username"]
+    password = influxdb_config["password"]
+
+    if not url or not username or not password or not bucket:
+        _LOGGER.error("InfluxDB configuration is incomplete")
+        return {"status": "error", "message": "Incomplete InfluxDB configuration"}
+
+    headers = {
+        "Content-type": "application/vnd.flux",
+        "Accept": "application/csv",
+    }
+
+    start_str = start_datetime.astimezone(ZoneInfo("UTC")).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    end_str = end_datetime.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Strip domain prefix from entity IDs for InfluxDB 1.x entity_id tag lookup
+    # InfluxDB 1.x stores entity_id without domain (e.g. "xyz_charge_limit" not "number.xyz_charge_limit")
+    sensor_conditions = []
+    for sensor in control_sensors:
+        short_id = sensor.split(".", 1)[-1] if "." in sensor else sensor
+        sensor_conditions.append(
+            f'r["_measurement"] == "sensor.{short_id}" or r["_measurement"] == "{sensor}" or r["entity_id"] == "{short_id}"'
+        )
+    sensor_filter = " or ".join(f"({c})" for c in sensor_conditions)
+
+    flux_query = f"""from(bucket: "{bucket}")
+                    |> range(start: {start_str}, stop: {end_str})
+                    |> filter(fn: (r) => {sensor_filter})
+                    |> filter(fn: (r) => r["_field"] == "value")
+                    |> sort(columns: ["_time"])
+                    """
+
+    try:
+        _LOGGER.info(
+            "Batch fetching control sensor data for %s (%d sensors)",
+            target_date.strftime("%Y-%m-%d"),
+            len(control_sensors),
+        )
+
+        response = requests.post(
+            url=url,
+            auth=(username, password),
+            headers=headers,
+            data=flux_query,
+            timeout=30,
+        )
+
+        if response.status_code == 204:
+            _LOGGER.warning("No control sensor data found for date %s", target_date)
+            return {"status": "error", "message": "No data found"}
+
+        if response.status_code != 200:
+            _LOGGER.error("Error from InfluxDB: %s", response.status_code)
+            return {
+                "status": "error",
+                "message": f"InfluxDB error: {response.status_code}",
+            }
+
+        period_data = _parse_avg_batch_response(response.text, target_date, local_tz)
+
+        _LOGGER.info(
+            "Control sensor batch complete: got data for %d periods", len(period_data)
+        )
+
+        return {"status": "success", "data": period_data}
+
+    except requests.RequestException as e:
+        _LOGGER.error("Error connecting to InfluxDB for control sensors: %s", str(e))
+        return {"status": "error", "message": f"Connection error: {e!s}"}
+    except Exception as e:
+        _LOGGER.error("Unexpected error in control sensor batch fetch: %s", str(e))
+        return {"status": "error", "message": f"Unexpected error: {e!s}"}
+
+
+def _parse_avg_batch_response(
+    response_text: str, target_date, local_tz
+) -> dict[int, dict[str, float]]:
+    """Parse control sensor response: compute mean value per period (no unit conversion).
+
+    Args:
+        response_text: CSV response from InfluxDB
+        target_date: The date being queried
+        local_tz: Local timezone
+
+    Returns:
+        dict: {period_num: {"sensor.entity_id": avg_value, ...}, ...}
+    """
+    lines = response_text.strip().split("\n")
+    data_lines = [line for line in lines if not line.startswith("#")]
+
+    col_map = _build_column_index(data_lines)
+    if col_map is None:
+        _LOGGER.warning("No header row found in control sensor batch response")
+        return {}
+
+    value_idx = col_map["_value"]
+    time_idx = col_map["_time"]
+
+    day_start = datetime.combine(target_date, datetime.min.time()).replace(
+        tzinfo=local_tz
+    )
+
+    sensor_period_readings: dict[str, dict[int, list[float]]] = {}
+
+    for line in data_lines:
+        parts = line.split(",")
+        try:
+            if (
+                len(parts) <= max(value_idx, time_idx)
+                or parts[value_idx].strip() == "_value"
+            ):
+                continue
+
+            timestamp_str = parts[time_idx].strip()
+            sensor_name = _extract_sensor_name(parts, col_map)
+            if not sensor_name:
+                continue
+            value = float(parts[value_idx].strip())
+
+            timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            timestamp_local = timestamp.astimezone(local_tz)
+
+            seconds_since_start = (timestamp_local - day_start).total_seconds()
+            if seconds_since_start < 0 or seconds_since_start >= 86400:
+                continue
+            period = int(seconds_since_start // 900)
+
+            if sensor_name not in sensor_period_readings:
+                sensor_period_readings[sensor_name] = {}
+            if period not in sensor_period_readings[sensor_name]:
+                sensor_period_readings[sensor_name][period] = []
+            sensor_period_readings[sensor_name][period].append(value)
+
+        except (IndexError, ValueError, TypeError):
+            continue
+
+    # Average values per period (no unit conversion)
+    period_data: dict[int, dict[str, float]] = {}
+    for sensor_name, periods in sensor_period_readings.items():
+        for period, values in periods.items():
+            mean_val = sum(values) / len(values)
+
+            if period not in period_data:
+                period_data[period] = {}
+            period_data[period][sensor_name] = mean_val
+
+    _LOGGER.debug(
+        "Parsed control data: %d sensors across %d periods",
+        len(sensor_period_readings),
+        len(period_data),
+    )
+
+    return period_data

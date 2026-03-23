@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from core.bess.health_check import run_system_health_checks
+from core.bess.influxdb_helper import get_control_sensor_data_batch
 from core.bess.time_utils import get_period_count
 
 router = APIRouter()
@@ -1448,38 +1449,71 @@ async def get_period_details():
         schedule_manager = system._schedule_manager
 
         now = datetime.now()
+        today = now.date()
         current_period = now.hour * 4 + now.minute // 15
 
         historical_store = system.historical_store
+        total_capacity = system.battery_settings.total_capacity
+        currency = system.home_settings.currency
 
         # Determine where the optimization result starts (may not cover period 0 if run mid-day)
         result_start_period = result.period_data[0].period if result.period_data else current_period
 
-        def _make_actual_entry(idx: int, actual, planned=None) -> dict:
+        # Fetch actual charge/discharge rates from InfluxDB for today
+        controller = system._controller
+        charge_rate_entity = None
+        discharge_rate_entity = None
+        control_data_today: dict = {}
+        try:
+            if controller is not None:
+                charge_rate_entity = controller.resolve_sensor_for_influxdb("battery_charging_power_rate")
+                discharge_rate_entity = controller.resolve_sensor_for_influxdb("battery_discharging_power_rate")
+                if charge_rate_entity or discharge_rate_entity:
+                    sensors = [e for e in [charge_rate_entity, discharge_rate_entity] if e]
+                    batch_result = get_control_sensor_data_batch(sensors, today)
+                    if batch_result.get("status") == "success":
+                        control_data_today = batch_result.get("data", {})
+        except Exception as e:
+            logger.warning(f"Could not fetch control sensor data from InfluxDB: {e}")
+
+        def _get_actual_rates(period_idx: int, control_data: dict) -> tuple[float | None, float | None]:
+            """Get actual charge/discharge rates for a period from InfluxDB control data."""
+            period_control = control_data.get(period_idx, {})
+            actual_charge = None
+            actual_discharge = None
+            if charge_rate_entity:
+                short_id = charge_rate_entity.split(".", 1)[-1] if "." in charge_rate_entity else charge_rate_entity
+                actual_charge = period_control.get(f"sensor.{short_id}")
+            if discharge_rate_entity:
+                short_id = discharge_rate_entity.split(".", 1)[-1] if "." in discharge_rate_entity else discharge_rate_entity
+                actual_discharge = period_control.get(f"sensor.{short_id}")
+            return actual_charge, actual_discharge
+
+        def _make_actual_entry(idx: int, actual, planned=None, control_data: dict | None = None) -> dict:
             """Build a period entry from historical store data.
 
-            Uses actual values as primary display values; if planned snapshot exists,
-            exposes actual* fields for plan-vs-actual comparison in the frontend.
+            Uses planned values as the primary display when available (plan-vs-actual comparison).
+            Always populates actual* fields from historical store when actual data is present.
             """
             display = idx % 96
             intent = actual.decision.strategic_intent
             control = schedule_manager.INTENT_TO_CONTROL.get(
                 intent, {"grid_charge": False, "charge_rate": 100, "discharge_rate": 0}
             )
-            # When a planned snapshot exists, show planned values as the primary numbers
-            # and actual values in the actual* fields for side-by-side comparison
             primary = planned if planned is not None else actual
+            actual_charge_rate, actual_discharge_rate = _get_actual_rates(idx % 96, control_data or {})
+            is_missing = actual.data_source == "missing"
             return {
                 "period": idx,
                 "time": f"{display // 4:02d}:{(display % 4) * 15:02d}",
-                "dataSource": "actual",
+                "dataSource": actual.data_source,
                 "isCurrent": False,
                 "buyPrice": round(actual.economic.buy_price, 4),
                 "sellPrice": round(actual.economic.sell_price, 4),
                 "solarForecast": round(primary.energy.solar_production, 3),
                 "consumptionForecast": round(primary.energy.home_consumption, 3),
-                "soeStart": round(primary.energy.battery_soe_start, 2),
-                "soeEnd": round(primary.energy.battery_soe_end, 2),
+                "soeStart": round(primary.energy.battery_soe_start / total_capacity * 100, 1) if total_capacity > 0 else 0.0,
+                "soeEnd": round(primary.energy.battery_soe_end / total_capacity * 100, 1) if total_capacity > 0 else 0.0,
                 "costBasis": round(actual.decision.cost_basis, 4),
                 "strategicIntent": intent,
                 "batteryAction": round(primary.decision.battery_action or 0.0, 3),
@@ -1500,28 +1534,57 @@ async def get_period_details():
                 "gridOnlyCost": round(primary.economic.grid_only_cost, 4),
                 "hourlySavings": round(primary.economic.hourly_savings, 4),
                 "batteryCycleCost": round(primary.economic.battery_cycle_cost, 4),
-                # Actual values shown alongside planned for plan-vs-actual comparison
-                "actualGridImported": round(actual.energy.grid_imported, 3) if planned else None,
-                "actualGridExported": round(actual.energy.grid_exported, 3) if planned else None,
-                "actualSolarProduction": round(actual.energy.solar_production, 3) if planned else None,
-                "actualBatteryCharged": round(actual.energy.battery_charged, 3) if planned else None,
-                "actualBatteryDischarged": round(actual.energy.battery_discharged, 3) if planned else None,
-                "actualHourlyCost": round(actual.economic.hourly_cost, 4) if planned else None,
+                # Actual values (always populated when actual data is not missing)
+                "actualSoeEnd": round(actual.energy.battery_soe_end / total_capacity * 100, 1) if total_capacity > 0 and not is_missing else None,
+                "actualGridImported": round(actual.energy.grid_imported, 3) if not is_missing else None,
+                "actualGridExported": round(actual.energy.grid_exported, 3) if not is_missing else None,
+                "actualSolarProduction": round(actual.energy.solar_production, 3) if not is_missing else None,
+                "actualConsumption": round(actual.energy.home_consumption, 3) if not is_missing else None,
+                "actualBatteryCharged": round(actual.energy.battery_charged, 3) if not is_missing else None,
+                "actualBatteryDischarged": round(actual.energy.battery_discharged, 3) if not is_missing else None,
+                "actualHourlyCost": round(actual.economic.hourly_cost, 4) if not is_missing else None,
+                "actualGridOnlyCost": round(actual.economic.grid_only_cost, 4) if not is_missing else None,
+                "actualHourlySavings": round(actual.economic.hourly_savings, 4) if not is_missing else None,
+                "actualChargeRate": round(actual_charge_rate, 1) if actual_charge_rate is not None else None,
+                "actualDischargeRate": round(actual_discharge_rate, 1) if actual_discharge_rate is not None else None,
             }
 
         periods = []
 
-        # Prepend past periods that fall before the optimization result starts
-        # (happens when system restarts mid-day and re-optimizes from current period)
+        # Prepend past calendar days from historical store (multi-day history)
+        available_dates = historical_store.get_available_dates()
+        for past_date in available_dates:
+            # Fetch control data for this past date
+            control_data_past: dict = {}
+            try:
+                if charge_rate_entity or discharge_rate_entity:
+                    sensors = [e for e in [charge_rate_entity, discharge_rate_entity] if e]
+                    batch_result = get_control_sensor_data_batch(sensors, past_date)
+                    if batch_result.get("status") == "success":
+                        control_data_past = batch_result.get("data", {})
+            except Exception as e:
+                logger.warning(f"Could not fetch control sensor data for {past_date}: {e}")
+
+            day_periods = historical_store.get_periods_for_date(past_date)
+            for period_idx, actual_past in enumerate(day_periods):
+                if actual_past is not None:
+                    planned_past = historical_store.get_planned_period_for_date(past_date, period_idx)
+                    entry = _make_actual_entry(period_idx, actual_past, planned_past, control_data_past)
+                    entry["date"] = past_date.isoformat()
+                    periods.append(entry)
+
+        # Prepend past periods from today that fall before the optimization result starts
         for past_idx in range(min(result_start_period, current_period)):
             actual_past = historical_store.get_period(past_idx)
             if actual_past is not None:
                 planned_past = historical_store.get_planned_period(past_idx)
-                periods.append(_make_actual_entry(past_idx, actual_past, planned_past))
+                entry = _make_actual_entry(past_idx, actual_past, planned_past, control_data_today)
+                entry["date"] = today.isoformat()
+                periods.append(entry)
 
         for period_data in result.period_data:
-            period = period_data.period  # absolute period index (already set by _add_timestamps_to_period_data)
-            display_period = period % 96   # map tomorrow's periods (96-191) back to 0-95 for time display
+            period = period_data.period
+            display_period = period % 96
             hour = display_period // 4
             minute = (display_period % 4) * 15
             time_str = f"{hour:02d}:{minute:02d}"
@@ -1534,18 +1597,22 @@ async def get_period_details():
 
             # For past periods in the result, cross-reference with historical store
             actual = historical_store.get_period(period) if period < current_period else None
+            is_missing = actual is not None and actual.data_source == "missing"
 
-            entry: dict = {
+            actual_charge_rate, actual_discharge_rate = _get_actual_rates(display_period, control_data_today) if actual else (None, None)
+
+            entry = {
                 "period": period,
                 "time": time_str,
-                "dataSource": "actual" if actual else period_data.data_source,
+                "date": today.isoformat(),
+                "dataSource": "actual" if actual and not is_missing else period_data.data_source,
                 "isCurrent": period == current_period,
                 "buyPrice": round(period_data.economic.buy_price, 4),
                 "sellPrice": round(period_data.economic.sell_price, 4),
                 "solarForecast": round(period_data.energy.solar_production, 3),
                 "consumptionForecast": round(period_data.energy.home_consumption, 3),
-                "soeStart": round(period_data.energy.battery_soe_start, 2),
-                "soeEnd": round(period_data.energy.battery_soe_end, 2),
+                "soeStart": round(period_data.energy.battery_soe_start / total_capacity * 100, 1) if total_capacity > 0 else 0.0,
+                "soeEnd": round(period_data.energy.battery_soe_end / total_capacity * 100, 1) if total_capacity > 0 else 0.0,
                 "costBasis": round(period_data.decision.cost_basis, 4),
                 "strategicIntent": intent,
                 "batteryAction": round(period_data.decision.battery_action or 0.0, 3),
@@ -1566,13 +1633,19 @@ async def get_period_details():
                 "gridOnlyCost": round(period_data.economic.grid_only_cost, 4),
                 "hourlySavings": round(period_data.economic.hourly_savings, 4),
                 "batteryCycleCost": round(period_data.economic.battery_cycle_cost, 4),
-                # Actual values from historical store for plan-vs-actual comparison
-                "actualGridImported": round(actual.energy.grid_imported, 3) if actual else None,
-                "actualGridExported": round(actual.energy.grid_exported, 3) if actual else None,
-                "actualSolarProduction": round(actual.energy.solar_production, 3) if actual else None,
-                "actualBatteryCharged": round(actual.energy.battery_charged, 3) if actual else None,
-                "actualBatteryDischarged": round(actual.energy.battery_discharged, 3) if actual else None,
-                "actualHourlyCost": round(actual.economic.hourly_cost, 4) if actual else None,
+                # Actual values from historical store
+                "actualSoeEnd": round(actual.energy.battery_soe_end / total_capacity * 100, 1) if actual and not is_missing and total_capacity > 0 else None,
+                "actualGridImported": round(actual.energy.grid_imported, 3) if actual and not is_missing else None,
+                "actualGridExported": round(actual.energy.grid_exported, 3) if actual and not is_missing else None,
+                "actualSolarProduction": round(actual.energy.solar_production, 3) if actual and not is_missing else None,
+                "actualConsumption": round(actual.energy.home_consumption, 3) if actual and not is_missing else None,
+                "actualBatteryCharged": round(actual.energy.battery_charged, 3) if actual and not is_missing else None,
+                "actualBatteryDischarged": round(actual.energy.battery_discharged, 3) if actual and not is_missing else None,
+                "actualHourlyCost": round(actual.economic.hourly_cost, 4) if actual and not is_missing else None,
+                "actualGridOnlyCost": round(actual.economic.grid_only_cost, 4) if actual and not is_missing else None,
+                "actualHourlySavings": round(actual.economic.hourly_savings, 4) if actual and not is_missing else None,
+                "actualChargeRate": round(actual_charge_rate, 1) if actual_charge_rate is not None else None,
+                "actualDischargeRate": round(actual_discharge_rate, 1) if actual_discharge_rate is not None else None,
             }
             periods.append(entry)
 
@@ -1581,6 +1654,7 @@ async def get_period_details():
             "optimizationPeriod": stored.optimization_period,
             "optimizationTimestamp": stored.timestamp.isoformat(),
             "currentPeriod": current_period,
+            "currency": currency,
         }
 
     except Exception as e:

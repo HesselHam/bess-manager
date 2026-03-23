@@ -5,6 +5,22 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.10] - 2026-03-23
+
+### Added
+
+- Decision Details table: plan vs actual comparison for SOE end %, consumption, costs, baseline, and savings columns
+- Decision Details table: actual charge/discharge rate % from InfluxDB (when entities are configured)
+- Decision Details table: multi-day history view (configurable via `history_days` setting)
+- Decision Details table: currency column headers now use configured currency instead of hardcoded SEK
+- SOE columns now display in % instead of kWh for easier reading
+- Date separator rows in Decision Details table for multi-day view
+
+### Fixed
+
+- Actual values (actualGridImported etc.) now always shown for past periods, not only when planned snapshot exists
+- `missing` data source correctly shown in Decision Details table
+
 ## [7.9.9] - 2026-03-23
 
 ### Fixed

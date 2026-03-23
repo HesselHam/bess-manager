@@ -277,6 +277,9 @@ class BatterySystemManager:
                 # Initialize historical data - using improved sensor collector
                 self._fetch_and_initialize_historical_data()
 
+                # Backfill past days for multi-day Decision Details history
+                self._fetch_historical_days()
+
                 # Fetch predictions
                 self._fetch_predictions()
 
@@ -628,6 +631,86 @@ class BatterySystemManager:
         except Exception as e:
             logger.error(f"Failed to initialize historical data: {e}")
 
+    def _fetch_historical_days(self) -> None:
+        """Backfill actual sensor data for the past history_days days on startup.
+
+        Called after _fetch_and_initialize_historical_data() during start().
+        Fills self.historical_store._historical_records for each past day
+        so the Decision Details table can show multi-day history on startup.
+        """
+        history_days = self.home_settings.history_days
+        if history_days < 1:
+            return
+
+        today = datetime.now(tz=time_utils.TIMEZONE).date()
+
+        for day_offset in range(-history_days, 0):
+            target_date = today + timedelta(days=day_offset)
+            period_count = get_period_count(target_date)
+
+            logger.info(
+                "Backfilling historical data for %s (%d periods)", target_date, period_count
+            )
+
+            periods_ok = 0
+            for period in range(period_count):
+                try:
+                    energy_data = self.sensor_collector.collect_energy_data(
+                        period, date_offset=day_offset
+                    )
+
+                    battery_power = energy_data.battery_net_change
+                    observed = infer_intent_from_flows(battery_power, energy_data)
+
+                    period_data = PeriodData(
+                        period=period,
+                        energy=energy_data,
+                        timestamp=datetime.now(tz=time_utils.TIMEZONE),
+                        data_source="actual",
+                        economic=EconomicData(),
+                        decision=DecisionData(
+                            strategic_intent="IDLE",
+                            observed_intent=observed,
+                        ),
+                    )
+                    self.historical_store.record_period_for_date(
+                        target_date, period, period_data
+                    )
+                    periods_ok += 1
+
+                except Exception as e:
+                    logger.debug(
+                        "Could not backfill period %d for %s: %s", period, target_date, e
+                    )
+                    self.historical_store.record_period_for_date(
+                        target_date,
+                        period,
+                        PeriodData(
+                            period=period,
+                            energy=EnergyData(
+                                solar_production=0.0,
+                                home_consumption=0.0,
+                                battery_charged=0.0,
+                                battery_discharged=0.0,
+                                grid_imported=0.0,
+                                grid_exported=0.0,
+                                battery_soe_start=0.0,
+                                battery_soe_end=0.0,
+                            ),
+                            timestamp=datetime.now(tz=time_utils.TIMEZONE),
+                            data_source="missing",
+                            economic=EconomicData(),
+                            decision=DecisionData(strategic_intent="IDLE"),
+                        ),
+                    )
+
+            logger.info(
+                "Backfill complete for %s: %d/%d periods collected",
+                target_date,
+                periods_ok,
+                period_count,
+            )
+
     def _fetch_predictions(self) -> None:
         """Fetch consumption and solar predictions and store them."""
         try:
@@ -771,10 +854,10 @@ class BatterySystemManager:
 
         if prepare_next_day:
             logger.info(
-                "Preparing for next day - clearing historical store and refreshing predictions"
+                "Preparing for next day - rolling over historical data and refreshing predictions"
             )
-            # Clear historical store to prevent yesterday's data from appearing as today's future data
-            self.historical_store.clear()
+            # Roll over today's data to historical store before clearing
+            self.historical_store.roll_over_to_historical()
             self.prediction_snapshot_store.clear()
             self._fetch_predictions()
 
@@ -2350,6 +2433,7 @@ class BatterySystemManager:
 
             if "home" in settings:
                 self.home_settings.update(**settings["home"])
+                self.historical_store.history_days = self.home_settings.history_days
 
             if "price" in settings:
                 self.price_settings.update(**settings["price"])

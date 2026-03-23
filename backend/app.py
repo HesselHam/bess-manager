@@ -371,6 +371,7 @@ class BESSController:
                     "safetyMargin": home_config["safety_margin_factor"],
                     "phaseCount": home_config["phase_count"],
                     "consumptionStrategy": home_config["consumption_strategy"],
+                    "historyDays": home_config.get("history_days", 1),
                 },
                 "price": {
                     "area": electricity_price_config["area"],

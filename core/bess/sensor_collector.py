@@ -111,7 +111,7 @@ class SensorCollector:
         )
         return resolved_ids
 
-    def collect_energy_data(self, period: int) -> EnergyData:
+    def collect_energy_data(self, period: int, date_offset: int = 0) -> EnergyData:
         """Collect sensor data for a period and create EnergyData with automatic detailed flows.
 
         Uses simple cache approach for runtime: current_live - cached_last = delta.
@@ -126,33 +126,33 @@ class SensorCollector:
         if period < 0:
             raise ValueError(f"Invalid period: {period}. Must be non-negative.")
 
-        # Check if this period is complete
         now = datetime.now()
-        current_period = now.hour * 4 + now.minute // 15
-        if period >= current_period:
-            raise ValueError(
-                f"Period {period} is still in progress or in the future, cannot collect complete data"
-            )
 
-        # Determine if we're doing historical backfill or runtime collection
-        # Historical: period < current - 1 (collecting old data during startup)
-        # Runtime: period == current - 1 (collecting just-completed period)
-        # Also treat as historical if no cache exists (startup/restart) - using live
-        # sensors for the last completed period would include energy from the
-        # currently in-progress period, inflating the last period's data
-        is_historical_backfill = (
-            period < current_period - 1 or self._last_readings is None
-        )
+        if date_offset == 0:
+            # Today: validate period is complete
+            current_period = now.hour * 4 + now.minute // 15
+            if period >= current_period:
+                raise ValueError(
+                    f"Period {period} is still in progress or in the future, cannot collect complete data"
+                )
+            is_historical_backfill = (
+                period < current_period - 1 or self._last_readings is None
+            )
+        else:
+            # Past day: all periods are historical
+            is_historical_backfill = True
 
         if is_historical_backfill:
             # HISTORICAL BACKFILL: Use InfluxDB for both current and previous readings
             logger.debug(
-                f"Period {period}: Historical backfill (period < current-1) - using InfluxDB for both"
+                "Period %d (date_offset=%d): Historical backfill - using InfluxDB for both",
+                period,
+                date_offset,
             )
-            target_date = now.date()
+            target_date = now.date() + timedelta(days=date_offset)
 
             # Get current period readings from InfluxDB
-            current_readings = self._get_period_readings(period, date_offset=0)
+            current_readings = self._get_period_readings(period, date_offset=date_offset)
             if not current_readings:
                 power_flows = self._get_power_based_flows(period, target_date)
                 if power_flows:
@@ -162,21 +162,21 @@ class SensorCollector:
                     )
                     return self._energy_data_from_power_flows(period, power_flows)
                 raise RuntimeError(
-                    f"No InfluxDB data available for period {period}. Cannot calculate energy flows."
+                    f"No InfluxDB data available for period {period} (date_offset={date_offset}). Cannot calculate energy flows."
                 )
 
             # Get previous period readings from InfluxDB
             if period == 0:
-                # Period 0 needs yesterday's last period
+                # Period 0 needs the last period of the previous day
                 prev_period = 95
-                date_offset = -1
+                prev_date_offset = date_offset - 1
             else:
-                # All other periods need previous period from today
+                # All other periods need previous period from the same day
                 prev_period = period - 1
-                date_offset = 0
+                prev_date_offset = date_offset
 
             previous_readings = self._get_period_readings(
-                prev_period, date_offset=date_offset
+                prev_period, date_offset=prev_date_offset
             )
             if not previous_readings:
                 power_flows = self._get_power_based_flows(period, target_date)
@@ -188,7 +188,7 @@ class SensorCollector:
                     )
                     return self._energy_data_from_power_flows(period, power_flows)
                 raise RuntimeError(
-                    f"No InfluxDB data available for period {prev_period} (date_offset={date_offset}). "
+                    f"No InfluxDB data available for period {prev_period} (prev_date_offset={prev_date_offset}). "
                     f"Cannot calculate delta for period {period}."
                 )
         else:
@@ -247,7 +247,7 @@ class SensorCollector:
             abs(flow_dict.get(key, 0.0)) < 0.001 for key in energy_flow_keys
         )
         if all_energy_zero and is_historical_backfill:
-            target_date = datetime.now().date()
+            target_date = now.date() + timedelta(days=date_offset)
             power_flows = self._get_power_based_flows(period, target_date)
             if power_flows:
                 for key in energy_flow_keys:
@@ -359,11 +359,12 @@ class SensorCollector:
             energy_data.home_consumption,
         )
 
-        # Update cache with current readings for next period
-        self._last_readings = current_readings
-        logger.debug(
-            f"Period {period}: Updated cache with current readings for next period"
-        )
+        # Only update cache for today's periods (not past day backfill)
+        if date_offset == 0:
+            self._last_readings = current_readings
+            logger.debug(
+                "Period %d: Updated cache with current readings for next period", period
+            )
 
         return energy_data
 

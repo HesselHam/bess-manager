@@ -177,12 +177,14 @@ class HomeSettings:
     min_valid: float = MIN_CONSUMPTION
     currency: str = DEFAULT_CURRENCY
     consumption_strategy: str = "sensor"
+    history_days: int = 1
 
     def __post_init__(self):
         assert self.phase_count in (
             1,
             3,
         ), f"phase_count must be 1 or 3, got {self.phase_count}"
+        assert self.history_days >= 1, f"history_days must be >= 1, got {self.history_days}"
 
     def update(self, **kwargs: Any) -> None:
         """Update settings from dict."""
@@ -215,6 +217,7 @@ class HomeSettings:
             self.consumption_strategy = home_config.get(
                 "consumption_strategy", "sensor"
             )
+            self.history_days = home_config.get("history_days", 1)
             self.__post_init__()
         return self
 

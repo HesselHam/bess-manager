@@ -4,6 +4,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork-Specific Fixes
 
+## Session 2026-03-23: Fix "Incomplete Historical Data" Warning (v7.9.9)
+
+### Symptom
+
+Production UI showed "Incomplete Historical Data — Missing data for 1 hour: 3" after each restart.
+Hour 3 = period 15 (03:45). Periods 12–14 were present; period 15 was not.
+
+### Root cause
+
+During startup backfill (`_fetch_and_initialize_historical_data`), `collect_energy_data(period)`
+raises `RuntimeError` if a period is absent from the InfluxDB batch cache. This happens when
+cumulative energy sensors have a data gap at the period boundary (e.g. brief Growatt offline).
+The exception was silently caught, leaving the period as `None` in `HistoricalDataStore`.
+
+### Three fixes applied
+
+**1. Power sensor fallback in `sensor_collector.py`** (`collect_energy_data` historical backfill path)
+
+When `_get_period_readings()` returns `None` (no cumulative sensor data for the period or its
+predecessor), the code now tries `_get_power_based_flows()` — power sensors (W) averaged over
+the period and converted to kWh. If power data is available, `_energy_data_from_power_flows()`
+constructs a real `EnergyData` directly from the flows. SOC start/end are set to the current
+live HA value (same value for both) because historical SOC is unavailable in this path.
+
+New helper method: `_energy_data_from_power_flows(period, power_flows) -> EnergyData`
+
+**2. Last-resort placeholder in `battery_system_manager.py`** (`_fetch_and_initialize_historical_data`)
+
+If both cumulative and power sensors fail (complete sensor outage), the exception handler now
+stores a zero-energy `PeriodData` with `data_source="missing"` instead of doing nothing.
+This ensures the period is never `None` in `HistoricalDataStore`, preventing the warning.
+
+`EnergyData` was added to the `from .models import` list in this file.
+
+**3. Logic bug fix in `api.py`** (`get_historical_data_status`)
+
+`missing_hours` and `completed_hours` could contain the same hour when only one quarter was
+missing (e.g. hour 3 appeared in both). Fixed so a hour is only in `completed_hours` if all
+four quarters are present:
+
+```python
+missing_hours_set = {p // 4 for p in missing_periods}
+missing_hours = sorted(missing_hours_set)
+completed_hours = sorted({p // 4 for p in completed_periods} - missing_hours_set)
+```
+
+### Data flow for historical backfill (priority order)
+
+1. Cumulative InfluxDB sensors → delta calculation → `data_source="actual"` ✅ best quality
+2. Power sensors (W→kWh) → direct flows → `data_source="actual"` ✅ good quality, no SOC delta
+3. Zero placeholder → `data_source="missing"` — only if all sensors offline simultaneously
+
 ## Session 2026-03-19: Period Details Table + Dynamic Adjustment Research
 
 ### What was built

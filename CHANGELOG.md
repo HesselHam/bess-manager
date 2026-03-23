@@ -5,6 +5,33 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.9] - 2026-03-23
+
+### Fixed
+
+- Startup backfill no longer leaves gaps in historical data when a cumulative energy sensor has a brief data gap in InfluxDB; power sensors (W→kWh) are now used as fallback.
+- If both cumulative and power sensors are unavailable for a period, a zero-energy placeholder (`data_source="missing"`) is stored so the period is never reported as missing.
+- "Incomplete Historical Data" warning no longer appears when only a single quarter within an hour is missing (was a false alarm in most cases).
+- `historical-data-status` API: an hour is now only reported as completed when all four quarters are present; previously an hour could appear in both `missingHours` and `completedHours` simultaneously.
+
+## [7.9.8] - 2026-03-21
+
+### Added
+
+- Decision Details table shows plan vs. actual comparison for past periods: planned intent/action alongside observed values so deviations are immediately visible.
+
+## [7.9.7] - 2026-03-20
+
+### Added
+
+- Plan/actual comparison columns added to the Decision Details table.
+
+## [7.9.6] - 2026-03-19
+
+### Fixed
+
+- IDLE strategic intent: `discharge_rate` reverted to 0 in all four code locations where it was incorrectly set to 100. Version bump forces fresh Docker build in HA Supervisor.
+
 ## [7.9.5] - 2026-03-14
 
 ### Added

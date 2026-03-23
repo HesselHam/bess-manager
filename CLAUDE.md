@@ -4,6 +4,85 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork-Specific Fixes
 
+## Session 2026-03-23: Decision Details Table Improvements (v7.9.10)
+
+### What was built
+
+Major improvements to the "Decision Details (15-min resolution)" table in
+[frontend/src/components/InverterStatusDashboard.tsx](frontend/src/components/InverterStatusDashboard.tsx).
+
+### Changes per column
+
+**SOE begin / SOE einde** — now displayed in % (not kWh). Calculated as `soeKwh / totalCapacity * 100`
+in the backend before sending to the frontend. SOE einde shows `plan / actual` — the planned value
+from the DP result in grey, the actual value from `historical_store` in bold.
+
+**Verbruik** — now shows `plan / actual`. Actual comes from `actual.energy.home_consumption` in the
+historical store. No separate InfluxDB query needed — already recorded at period end.
+
+**Chg% / Dchg%** — now shows `plan / actual`. Planned values come from `INTENT_TO_CONTROL` (0 or 100
+for most intents, or specific value from `adjust_charging_power`). Actual values are fetched from
+InfluxDB using `get_control_sensor_data_batch()` — this averages `number.*` entity values
+(`battery_charging_power_rate`, `battery_discharging_power_rate`) per 15-min period.
+Note: these entities must be in InfluxDB (HA config updated to include `number` domain).
+
+**Grid↓ / Grid↑** — already had plan/actual; no change needed.
+
+**Kosten / Baseline / Besparing** — now show `plan / actual`. Actual values from
+`actual.economic.hourly_cost`, `actual.economic.grid_only_cost`, `actual.economic.hourly_savings`.
+
+**Currency** — all `SEK` labels replaced with `periodDetails?.currency ?? 'SEK'`. The backend
+includes `currency: system.home_settings.currency` in the `/api/period_details` response.
+
+### Multi-day history
+
+**Why**: User wanted to see yesterday's actual data alongside today's plan, configurable via
+`history_days` (default=1, meaning yesterday + today).
+
+**How it works**:
+
+1. **Midnight rollover** (`historical_store.roll_over_to_historical()`): At 23:55 (`prepare_next_day`),
+   today's `_records` and `_planned_records` are copied into `_historical_records[today]` and
+   `_historical_planned[today]` before clearing. Previously `historical_store.clear()` discarded
+   everything. `evict_old_days()` removes data older than `history_days`.
+
+2. **Startup backfill** (`_fetch_historical_days()`): Called during `start()` after today's backfill.
+   Loops over `range(-history_days, 0)` (e.g., -1 for yesterday), calls
+   `sensor_collector.collect_energy_data(period, date_offset=day_offset)` for each period, and
+   stores results via `historical_store.record_period_for_date(target_date, period, period_data)`.
+
+3. **`collect_energy_data(date_offset)`**: Added `date_offset: int = 0` parameter. When `date_offset < 0`,
+   always uses historical backfill mode (skips live sensor path), passes the correct date to
+   `_get_period_readings()`, and uses `prev_date_offset = date_offset - 1` for period 0 boundary.
+   Cache (`_last_readings`) is only updated when `date_offset == 0`.
+
+4. **API**: `get_period_details` prepends past dates from `historical_store.get_available_dates()`
+   before today's periods. Frontend adds date separator rows when `p.date` changes.
+
+### Bug fix: actual* fields always populated
+
+Previously, `_make_actual_entry()` had `if planned else None` guards on all actual* fields, so
+they only appeared when a planned snapshot existed. Fixed: actual* fields now always populated
+from the historical store, using `if not is_missing` (where `is_missing = data_source == "missing"`).
+
+### New infrastructure added
+
+- `historical_data_store.py`: `roll_over_to_historical()`, `get_planned_period_for_date()`
+- `sensor_collector.py`: `date_offset` parameter on `collect_energy_data()`
+- `battery_system_manager.py`: `_fetch_historical_days()`, called in `start()`
+- `influxdb_helper.py`: `get_control_sensor_data_batch()` + `_parse_avg_batch_response()` —
+  averages raw state values (%) per period, no W→kWh conversion; strips domain prefix from
+  entity IDs for InfluxDB 1.x compatibility (e.g. `number.entity` → checks `entity_id == "entity"`)
+- `backend/api.py`: Import of `get_control_sensor_data_batch`; full replacement of
+  `get_period_details()` endpoint
+
+### InfluxDB: number.* entities
+
+`number.rkm0d7n04x_battery_charge_power_limit` and `number.rkm0d7n04x_battery_discharge_power_limit`
+are now written to InfluxDB. Required adding `number` to the `include_domains` list in the HA
+InfluxDB integration config (homeassistant-config repo). Without this, actual charge/discharge
+rates would not appear in the Decision Details table.
+
 ## Session 2026-03-23: Fix "Incomplete Historical Data" Warning (v7.9.9)
 
 ### Symptom

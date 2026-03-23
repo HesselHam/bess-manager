@@ -1883,8 +1883,10 @@ async def get_historical_data_status():
         completed_periods = [i for i in range(current_period) if periods[i] is not None]
 
         # Convert to hours for reporting (backwards compatibility)
-        missing_hours = list({p // 4 for p in missing_periods})
-        completed_hours = list({p // 4 for p in completed_periods})
+        # An hour is "missing" if ANY quarter in it is missing; only "completed" if ALL quarters present
+        missing_hours_set = {p // 4 for p in missing_periods}
+        missing_hours = sorted(missing_hours_set)
+        completed_hours = sorted({p // 4 for p in completed_periods} - missing_hours_set)
 
         is_incomplete = len(missing_periods) > 0
 

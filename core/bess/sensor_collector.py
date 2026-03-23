@@ -149,10 +149,18 @@ class SensorCollector:
             logger.debug(
                 f"Period {period}: Historical backfill (period < current-1) - using InfluxDB for both"
             )
+            target_date = now.date()
 
             # Get current period readings from InfluxDB
             current_readings = self._get_period_readings(period, date_offset=0)
             if not current_readings:
+                power_flows = self._get_power_based_flows(period, target_date)
+                if power_flows:
+                    logger.info(
+                        "Period %d: Cumulative InfluxDB data missing, using power sensor fallback",
+                        period,
+                    )
+                    return self._energy_data_from_power_flows(period, power_flows)
                 raise RuntimeError(
                     f"No InfluxDB data available for period {period}. Cannot calculate energy flows."
                 )
@@ -171,6 +179,14 @@ class SensorCollector:
                 prev_period, date_offset=date_offset
             )
             if not previous_readings:
+                power_flows = self._get_power_based_flows(period, target_date)
+                if power_flows:
+                    logger.info(
+                        "Period %d: Previous period %d cumulative data missing, using power sensor fallback",
+                        period,
+                        prev_period,
+                    )
+                    return self._energy_data_from_power_flows(period, power_flows)
                 raise RuntimeError(
                     f"No InfluxDB data available for period {prev_period} (date_offset={date_offset}). "
                     f"Cannot calculate delta for period {period}."
@@ -350,6 +366,33 @@ class SensorCollector:
         )
 
         return energy_data
+
+    def _energy_data_from_power_flows(
+        self, period: int, power_flows: dict[str, float]
+    ) -> EnergyData:
+        """Create EnergyData from power sensor flows when cumulative InfluxDB data is unavailable.
+
+        SOC start and end are set to the current live value (same value) because historical
+        SOC is unavailable in this fallback path.
+        """
+        try:
+            current_soc = self.ha_controller.get_battery_soc()
+        except Exception as e:
+            logger.warning(
+                "Period %d: Cannot read SOC from HA for power fallback: %s", period, e
+            )
+            current_soc = 0.0
+        soe = (current_soc / 100.0) * self.battery_settings.total_capacity
+        return EnergyData(
+            solar_production=power_flows.get("solar_production", 0.0),
+            home_consumption=power_flows.get("load_consumption", 0.0),
+            battery_charged=power_flows.get("battery_charged", 0.0),
+            battery_discharged=power_flows.get("battery_discharged", 0.0),
+            grid_imported=power_flows.get("import_from_grid", 0.0),
+            grid_exported=power_flows.get("export_to_grid", 0.0),
+            battery_soe_start=soe,
+            battery_soe_end=soe,
+        )
 
     def _ensure_batch_data_loaded(self, target_date) -> bool:
         """Ensure batch data is loaded for the target date.

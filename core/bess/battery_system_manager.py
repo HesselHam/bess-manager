@@ -27,6 +27,7 @@ from .models import (
     DecisionData,
     EconomicData,
     EconomicSummary,
+    EnergyData,
     PeriodData,
     infer_intent_from_flows,
 )
@@ -574,6 +575,32 @@ class BatterySystemManager:
                     except Exception as e:
                         logger.warning(
                             f"Failed to collect/store data for period {period} ({format_period(period)}): {e}"
+                        )
+                        # Store a placeholder so the period is not reported as missing in
+                        # historical-data-status. All-zero energy with data_source="missing"
+                        # signals that actual sensor data was unavailable for this period.
+                        planned_intent = self._get_planned_intent_for_period(period)
+                        self.historical_store.record_period(
+                            period,
+                            PeriodData(
+                                period=period,
+                                energy=EnergyData(
+                                    solar_production=0.0,
+                                    home_consumption=0.0,
+                                    battery_charged=0.0,
+                                    battery_discharged=0.0,
+                                    grid_imported=0.0,
+                                    grid_exported=0.0,
+                                    battery_soe_start=0.0,
+                                    battery_soe_end=0.0,
+                                ),
+                                timestamp=datetime.now(tz=time_utils.TIMEZONE),
+                                data_source="missing",
+                                economic=EconomicData(),
+                                decision=DecisionData(
+                                    strategic_intent=planned_intent or "IDLE"
+                                ),
+                            ),
                         )
 
                 # Verify storage using period-based API

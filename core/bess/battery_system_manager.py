@@ -887,6 +887,17 @@ class BatterySystemManager:
                 ),
             )
             self.historical_store.record_period(prev_period, period_data)
+
+            # Snapshot DP-planned values before next optimization overwrites them
+            latest = self.schedule_store.get_latest_schedule()
+            if latest is not None:
+                opt_period = latest.optimization_period
+                result = latest.optimization_result
+                if result.period_data and opt_period <= prev_period < opt_period + len(result.period_data):
+                    self.historical_store.record_planned_period(
+                        prev_period, result.period_data[prev_period - opt_period]
+                    )
+
             logger.info(
                 f"Recorded energy data for period {prev_period} ({format_period(prev_period)})"
             )

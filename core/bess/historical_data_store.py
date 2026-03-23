@@ -30,6 +30,8 @@ class HistoricalDataStore:
         """
         # Simple storage: period_index → PeriodData
         self._records: dict[int, PeriodData] = {}
+        # Planned (DP-predicted) values snapshot at the moment a period completes
+        self._planned_records: dict[int, PeriodData] = {}
 
         # Store battery settings reference for SOC calculations
         self.battery_settings = battery_settings
@@ -66,8 +68,20 @@ class HistoricalDataStore:
             period_data.energy.battery_soe_end,
         )
 
+    def record_planned_period(self, period_index: int, planned_data: PeriodData) -> None:
+        """Snapshot the DP-planned values for a period at the moment it completes.
+
+        Called just before the optimization re-runs so the planned values from
+        the previous optimization (which still cover this period) are captured.
+
+        Args:
+            period_index: Continuous index from today 00:00 (0-95)
+            planned_data: PeriodData with data_source="predicted" from optimization result
+        """
+        self._planned_records[period_index] = planned_data
+
     def get_period(self, period_index: int) -> PeriodData | None:
-        """Get data for a specific period.
+        """Get actual data for a specific period.
 
         Args:
             period_index: Continuous index from today 00:00
@@ -76,6 +90,17 @@ class HistoricalDataStore:
             PeriodData if available, None if missing
         """
         return self._records.get(period_index)
+
+    def get_planned_period(self, period_index: int) -> PeriodData | None:
+        """Get the DP-planned snapshot for a specific period.
+
+        Args:
+            period_index: Continuous index from today 00:00
+
+        Returns:
+            Planned PeriodData if snapshotted, None if missing
+        """
+        return self._planned_records.get(period_index)
 
     def get_today_periods(self) -> list[PeriodData | None]:
         """Get all periods for today (accounting for DST).

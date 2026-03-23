@@ -1452,7 +1452,73 @@ async def get_period_details():
 
         historical_store = system.historical_store
 
+        # Determine where the optimization result starts (may not cover period 0 if run mid-day)
+        result_start_period = result.period_data[0].period if result.period_data else current_period
+
+        def _make_actual_entry(idx: int, actual, planned=None) -> dict:
+            """Build a period entry from historical store data.
+
+            Uses actual values as primary display values; if planned snapshot exists,
+            exposes actual* fields for plan-vs-actual comparison in the frontend.
+            """
+            display = idx % 96
+            intent = actual.decision.strategic_intent
+            control = schedule_manager.INTENT_TO_CONTROL.get(
+                intent, {"grid_charge": False, "charge_rate": 100, "discharge_rate": 0}
+            )
+            # When a planned snapshot exists, show planned values as the primary numbers
+            # and actual values in the actual* fields for side-by-side comparison
+            primary = planned if planned is not None else actual
+            return {
+                "period": idx,
+                "time": f"{display // 4:02d}:{(display % 4) * 15:02d}",
+                "dataSource": "actual",
+                "isCurrent": False,
+                "buyPrice": round(actual.economic.buy_price, 4),
+                "sellPrice": round(actual.economic.sell_price, 4),
+                "solarForecast": round(primary.energy.solar_production, 3),
+                "consumptionForecast": round(primary.energy.home_consumption, 3),
+                "soeStart": round(primary.energy.battery_soe_start, 2),
+                "soeEnd": round(primary.energy.battery_soe_end, 2),
+                "costBasis": round(actual.decision.cost_basis, 4),
+                "strategicIntent": intent,
+                "batteryAction": round(primary.decision.battery_action or 0.0, 3),
+                "batteryMode": schedule_manager.INTENT_TO_MODE.get(intent, "load_first"),
+                "gridCharge": control["grid_charge"],
+                "chargeRate": control["charge_rate"],
+                "dischargeRate": control["discharge_rate"],
+                "gridImported": round(primary.energy.grid_imported, 3),
+                "gridExported": round(primary.energy.grid_exported, 3),
+                "solarToHome": round(actual.energy.solar_to_home, 3),
+                "solarToBattery": round(actual.energy.solar_to_battery, 3),
+                "solarToGrid": round(actual.energy.solar_to_grid, 3),
+                "gridToHome": round(primary.energy.grid_to_home, 3),
+                "gridToBattery": round(primary.energy.grid_to_battery, 3),
+                "batteryToHome": round(primary.energy.battery_to_home, 3),
+                "batteryToGrid": round(primary.energy.battery_to_grid, 3),
+                "hourlyCost": round(primary.economic.hourly_cost, 4),
+                "gridOnlyCost": round(primary.economic.grid_only_cost, 4),
+                "hourlySavings": round(primary.economic.hourly_savings, 4),
+                "batteryCycleCost": round(primary.economic.battery_cycle_cost, 4),
+                # Actual values shown alongside planned for plan-vs-actual comparison
+                "actualGridImported": round(actual.energy.grid_imported, 3) if planned else None,
+                "actualGridExported": round(actual.energy.grid_exported, 3) if planned else None,
+                "actualSolarProduction": round(actual.energy.solar_production, 3) if planned else None,
+                "actualBatteryCharged": round(actual.energy.battery_charged, 3) if planned else None,
+                "actualBatteryDischarged": round(actual.energy.battery_discharged, 3) if planned else None,
+                "actualHourlyCost": round(actual.economic.hourly_cost, 4) if planned else None,
+            }
+
         periods = []
+
+        # Prepend past periods that fall before the optimization result starts
+        # (happens when system restarts mid-day and re-optimizes from current period)
+        for past_idx in range(min(result_start_period, current_period)):
+            actual_past = historical_store.get_period(past_idx)
+            if actual_past is not None:
+                planned_past = historical_store.get_planned_period(past_idx)
+                periods.append(_make_actual_entry(past_idx, actual_past, planned_past))
+
         for period_data in result.period_data:
             period = period_data.period  # absolute period index (already set by _add_timestamps_to_period_data)
             display_period = period % 96   # map tomorrow's periods (96-191) back to 0-95 for time display
@@ -1466,13 +1532,13 @@ async def get_period_details():
             )
             mode = schedule_manager.INTENT_TO_MODE.get(intent, "load_first")
 
-            # For past periods, look up actual recorded values from historical store
+            # For past periods in the result, cross-reference with historical store
             actual = historical_store.get_period(period) if period < current_period else None
 
             entry: dict = {
                 "period": period,
                 "time": time_str,
-                "dataSource": period_data.data_source,
+                "dataSource": "actual" if actual else period_data.data_source,
                 "isCurrent": period == current_period,
                 "buyPrice": round(period_data.economic.buy_price, 4),
                 "sellPrice": round(period_data.economic.sell_price, 4),
@@ -1500,7 +1566,7 @@ async def get_period_details():
                 "gridOnlyCost": round(period_data.economic.grid_only_cost, 4),
                 "hourlySavings": round(period_data.economic.hourly_savings, 4),
                 "batteryCycleCost": round(period_data.economic.battery_cycle_cost, 4),
-                # Actual values from historical store (None for future/current periods)
+                # Actual values from historical store for plan-vs-actual comparison
                 "actualGridImported": round(actual.energy.grid_imported, 3) if actual else None,
                 "actualGridExported": round(actual.energy.grid_exported, 3) if actual else None,
                 "actualSolarProduction": round(actual.energy.solar_production, 3) if actual else None,

@@ -1040,9 +1040,9 @@ const InverterStatusDashboard: React.FC = () => {
                           ? 'bg-green-50/40 dark:bg-green-900/10'
                           : '';
 
-                        const fmtDual = (planned: number, actual: number | null, d = 3) => {
-                          const fv = (v: number) => v === 0 ? '—' : v.toFixed(d);
-                          if (actual === null) return <>{fv(planned)}</>;
+                        const fmtDual = (planned: number, actual: number | null, d = 3, showZero = false) => {
+                          const fv = (v: number) => (!showZero && v === 0) ? '—' : v.toFixed(d);
+                          if (actual === null) return <span className="text-gray-400 dark:text-gray-500">{fv(planned)}</span>;
                           return <><span className="text-gray-400 dark:text-gray-500">{fv(planned)}</span><span className="text-gray-300 dark:text-gray-600 mx-0.5">/</span><span className="font-medium">{fv(actual)}</span></>;
                         };
                         const fmtCostDual = (planned: number, actual: number | null) => {
@@ -1085,8 +1085,8 @@ const InverterStatusDashboard: React.FC = () => {
                             <td className="px-2 py-1 text-center">
                               {p.gridCharge ? <span className="text-blue-600">✓</span> : <span className="text-gray-300 dark:text-gray-600">—</span>}
                             </td>
-                            <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{fmtDual(p.chargeRate, p.actualChargeRate, 0)}</td>
-                            <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{fmtDual(p.dischargeRate, p.actualDischargeRate, 0)}</td>
+                            <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{fmtDual(p.chargeRate, p.actualChargeRate, 0, true)}</td>
+                            <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{fmtDual(p.dischargeRate, p.actualDischargeRate, 0, true)}</td>
                             {/* Flows */}
                             <td className="px-2 py-1 text-right font-mono text-orange-700 dark:text-orange-400">{fmtDual(p.gridImported, p.actualGridImported)}</td>
                             <td className="px-2 py-1 text-right font-mono text-teal-700 dark:text-teal-400">{fmtDual(p.gridExported, p.actualGridExported)}</td>

@@ -4,15 +4,111 @@ Stores today's data plus up to `history_days` past days for plan-vs-actual
 comparison in the Decision Details table.
 """
 
+import json
 import logging
+import os
 from datetime import date, datetime, timedelta
 
 from core.bess import time_utils
-from core.bess.models import PeriodData
+from core.bess.models import DecisionData, EconomicData, EnergyData, PeriodData
 from core.bess.settings import BatterySettings
 from core.bess.time_utils import get_period_count
 
 logger = logging.getLogger(__name__)
+
+STORE_VERSION = 1
+_STORE_FILENAME = "historical_store.json"
+
+
+def _period_data_to_dict(pd: PeriodData) -> dict:
+    e = pd.energy
+    return {
+        "period": pd.period,
+        "data_source": pd.data_source,
+        "timestamp": pd.timestamp.isoformat() if pd.timestamp else None,
+        "energy": {
+            "solar_production": e.solar_production,
+            "home_consumption": e.home_consumption,
+            "battery_charged": e.battery_charged,
+            "battery_discharged": e.battery_discharged,
+            "grid_imported": e.grid_imported,
+            "grid_exported": e.grid_exported,
+            "battery_soe_start": e.battery_soe_start,
+            "battery_soe_end": e.battery_soe_end,
+        },
+        "economic": {
+            "buy_price": pd.economic.buy_price,
+            "sell_price": pd.economic.sell_price,
+            "grid_cost": pd.economic.grid_cost,
+            "battery_cycle_cost": pd.economic.battery_cycle_cost,
+            "hourly_cost": pd.economic.hourly_cost,
+            "grid_only_cost": pd.economic.grid_only_cost,
+            "solar_only_cost": pd.economic.solar_only_cost,
+            "hourly_savings": pd.economic.hourly_savings,
+        },
+        "decision": {
+            "strategic_intent": pd.decision.strategic_intent,
+            "observed_intent": pd.decision.observed_intent,
+            "battery_action": pd.decision.battery_action,
+            "cost_basis": pd.decision.cost_basis,
+            "pattern_name": pd.decision.pattern_name,
+            "description": pd.decision.description,
+            "economic_chain": pd.decision.economic_chain,
+            "immediate_value": pd.decision.immediate_value,
+            "future_value": pd.decision.future_value,
+            "net_strategy_value": pd.decision.net_strategy_value,
+            "advanced_flow_pattern": pd.decision.advanced_flow_pattern,
+            "detailed_flow_values": pd.decision.detailed_flow_values,
+            "future_target_hours": pd.decision.future_target_hours,
+        },
+    }
+
+
+def _period_data_from_dict(d: dict) -> PeriodData:
+    e = d["energy"]
+    ec = d["economic"]
+    dec = d["decision"]
+    ts_str = d.get("timestamp")
+    return PeriodData(
+        period=d["period"],
+        data_source=d["data_source"],
+        timestamp=datetime.fromisoformat(ts_str) if ts_str else None,
+        energy=EnergyData(
+            solar_production=e["solar_production"],
+            home_consumption=e["home_consumption"],
+            battery_charged=e["battery_charged"],
+            battery_discharged=e["battery_discharged"],
+            grid_imported=e["grid_imported"],
+            grid_exported=e["grid_exported"],
+            battery_soe_start=e["battery_soe_start"],
+            battery_soe_end=e["battery_soe_end"],
+        ),
+        economic=EconomicData(
+            buy_price=ec["buy_price"],
+            sell_price=ec["sell_price"],
+            grid_cost=ec["grid_cost"],
+            battery_cycle_cost=ec["battery_cycle_cost"],
+            hourly_cost=ec["hourly_cost"],
+            grid_only_cost=ec["grid_only_cost"],
+            solar_only_cost=ec["solar_only_cost"],
+            hourly_savings=ec["hourly_savings"],
+        ),
+        decision=DecisionData(
+            strategic_intent=dec["strategic_intent"],
+            observed_intent=dec.get("observed_intent"),
+            battery_action=dec.get("battery_action"),
+            cost_basis=dec["cost_basis"],
+            pattern_name=dec.get("pattern_name", ""),
+            description=dec.get("description", ""),
+            economic_chain=dec.get("economic_chain", ""),
+            immediate_value=dec.get("immediate_value", 0.0),
+            future_value=dec.get("future_value", 0.0),
+            net_strategy_value=dec.get("net_strategy_value", 0.0),
+            advanced_flow_pattern=dec.get("advanced_flow_pattern", ""),
+            detailed_flow_values=dec.get("detailed_flow_values", {}),
+            future_target_hours=dec.get("future_target_hours", []),
+        ),
+    )
 
 
 class HistoricalDataStore:
@@ -22,12 +118,18 @@ class HistoricalDataStore:
     Past days are stored keyed by date and period index.
     """
 
-    def __init__(self, battery_settings: BatterySettings, history_days: int = 1):
+    def __init__(
+        self,
+        battery_settings: BatterySettings,
+        history_days: int = 1,
+        data_dir: str = "/data",
+    ):
         """Initialize the historical data store.
 
         Args:
             battery_settings: Battery settings reference (shared, always up-to-date)
             history_days: Number of past days to retain (1 = yesterday + today)
+            data_dir: Directory for persistent storage (default: /data for HA add-on)
         """
         # Today's data: period_index → PeriodData
         self._records: dict[int, PeriodData] = {}
@@ -39,8 +141,73 @@ class HistoricalDataStore:
 
         self.battery_settings = battery_settings
         self.history_days = history_days
+        self._store_path = os.path.join(data_dir, _STORE_FILENAME)
 
+        self._load()
         logger.debug("Initialized HistoricalDataStore (history_days=%d)", history_days)
+
+    def _save(self) -> None:
+        """Persist the store to disk."""
+        try:
+            payload = {
+                "version": STORE_VERSION,
+                "records": {str(k): _period_data_to_dict(v) for k, v in self._records.items()},
+                "planned_records": {str(k): _period_data_to_dict(v) for k, v in self._planned_records.items()},
+                "historical_records": {
+                    d.isoformat(): {str(k): _period_data_to_dict(v) for k, v in periods.items()}
+                    for d, periods in self._historical_records.items()
+                },
+                "historical_planned": {
+                    d.isoformat(): {str(k): _period_data_to_dict(v) for k, v in periods.items()}
+                    for d, periods in self._historical_planned.items()
+                },
+            }
+            os.makedirs(os.path.dirname(self._store_path), exist_ok=True)
+            with open(self._store_path, "w") as f:
+                json.dump(payload, f)
+        except Exception as e:
+            logger.warning("Failed to save historical store: %s", e)
+
+    def _load(self) -> None:
+        """Load the store from disk. Wipes and starts fresh on version mismatch or error."""
+        if not os.path.exists(self._store_path):
+            return
+        try:
+            with open(self._store_path) as f:
+                payload = json.load(f)
+            if payload.get("version") != STORE_VERSION:
+                logger.warning(
+                    "Historical store version mismatch (got %s, expected %s) — starting fresh",
+                    payload.get("version"),
+                    STORE_VERSION,
+                )
+                os.remove(self._store_path)
+                return
+            self._records = {int(k): _period_data_from_dict(v) for k, v in payload.get("records", {}).items()}
+            self._planned_records = {int(k): _period_data_from_dict(v) for k, v in payload.get("planned_records", {}).items()}
+            self._historical_records = {
+                date.fromisoformat(d): {int(k): _period_data_from_dict(v) for k, v in periods.items()}
+                for d, periods in payload.get("historical_records", {}).items()
+            }
+            self._historical_planned = {
+                date.fromisoformat(d): {int(k): _period_data_from_dict(v) for k, v in periods.items()}
+                for d, periods in payload.get("historical_planned", {}).items()
+            }
+            logger.info(
+                "Loaded historical store: %d today periods, %d past days",
+                len(self._records),
+                len(self._historical_records),
+            )
+        except Exception as e:
+            logger.warning("Failed to load historical store (%s) — starting fresh", e)
+            self._records = {}
+            self._planned_records = {}
+            self._historical_records = {}
+            self._historical_planned = {}
+            try:
+                os.remove(self._store_path)
+            except OSError:
+                pass
 
     def record_period(self, period_index: int, period_data: PeriodData) -> None:
         """Record actual sensor data for a period (today).
@@ -62,6 +229,7 @@ class HistoricalDataStore:
             )
 
         self._records[period_index] = period_data
+        self._save()
 
         logger.debug(
             "Recorded period %d: SOC %.1f → %.1f kWh",
@@ -83,6 +251,7 @@ class HistoricalDataStore:
         if d not in self._historical_records:
             self._historical_records[d] = {}
         self._historical_records[d][period_index] = period_data
+        self._save()
 
     def record_planned_period(self, period_index: int, planned_data: PeriodData) -> None:
         """Snapshot the DP-planned values for a period at the moment it completes.
@@ -92,6 +261,7 @@ class HistoricalDataStore:
             planned_data: PeriodData with data_source="predicted" from optimization result
         """
         self._planned_records[period_index] = planned_data
+        self._save()
 
     def get_period(self, period_index: int) -> PeriodData | None:
         """Get actual data for a specific period (today).
@@ -205,6 +375,7 @@ class HistoricalDataStore:
         self._records.clear()
         self._planned_records.clear()
         self.evict_old_days()
+        self._save()
         logger.info("Historical roll-over complete for %s", today)
 
     def get_planned_period_for_date(self, d: date, period_index: int) -> PeriodData | None:

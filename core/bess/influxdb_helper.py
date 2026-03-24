@@ -973,6 +973,18 @@ def _parse_avg_batch_response(
                 period_data[period] = {}
             period_data[period][sensor_name] = mean_val
 
+    # Fill(previous): carry last known value forward to periods with no data
+    all_sensor_names = set(sensor_period_readings.keys())
+    last_known: dict[str, float] = {}
+    for period in range(96):
+        for sensor_name in all_sensor_names:
+            if period in period_data and sensor_name in period_data[period]:
+                last_known[sensor_name] = period_data[period][sensor_name]
+            elif sensor_name in last_known:
+                if period not in period_data:
+                    period_data[period] = {}
+                period_data[period][sensor_name] = last_known[sensor_name]
+
     _LOGGER.debug(
         "Parsed control data: %d sensors across %d periods",
         len(sensor_period_readings),

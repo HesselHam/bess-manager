@@ -4,6 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork-Specific Fixes
 
+## Session 2026-03-24 (part 3): Battery Settings card Charge Power Rate fix (v7.9.16)
+
+### v7.9.16: Fix Charge Power Rate showing hardcoded 40% instead of live sensor
+
+**What**: The Battery Settings card showed "Charge Power Rate: 40%" — always, regardless
+of what the inverter actually had set.
+
+**Why**: `chargingPowerRate` in the card came from `batterySettings?.chargingPowerRate`
+→ `BatterySettings.charging_power_rate` → hardcoded default `BATTERY_DEFAULT_CHARGING_POWER_RATE = 40`.
+This is the power monitor's internal target value, not a live sensor read.
+Meanwhile, `Discharge Power Rate` already used `controller.get_discharging_power_rate()`
+(live HA sensor read) — inconsistent.
+
+**How**: Added `charge_power_rate` to the `/api/battery-settings` response in `backend/api.py`
+using `controller.get_charging_power_rate()` → reads `battery_charging_power_rate` sensor
+(`number.growatt_min_3600tl_xh_battery_charge_power_limit`) live from HA.
+Frontend now reads `inverterStatus?.chargePowerRate` instead of `batterySettings?.chargingPowerRate`.
+
+**Note**: `get_charging_power_rate()` reads the current HA entity state — always returns
+the last known value regardless of how long ago it changed. No sparse data issue here
+(unlike InfluxDB which only stores change events).
+
 ## Session 2026-03-24 (part 2): Decision Details Chg%/Dchg% fixes (v7.9.15)
 
 ### v7.9.15: Persistent HistoricalDataStore, fill(previous) for Chg%/Dchg%, show 0 as 0

@@ -5,6 +5,21 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.16] - 2026-03-24
+
+### Fixed
+
+- Battery Settings card: Charge Power Rate now shows live HA sensor value instead of hardcoded 40% default.
+
+## [7.9.15] - 2026-03-24
+
+### Fixed
+
+- Decision Details table: Chg%/Dchg% actual values now use fill(previous) so periods without a new InfluxDB write carry the last known value forward.
+- Decision Details table: 0% now displays as `0` instead of `—` in Chg%/Dchg% columns.
+- Decision Details table: plan value always shown in grey even when actual is absent.
+- HistoricalDataStore now persists to `/data/historical_store.json` — plan/actual data survives restarts. Version mismatch wipes the file and starts fresh.
+
 ## [7.9.14] - 2026-03-24
 
 ### Changed

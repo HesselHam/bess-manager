@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.10"
+version: "7.9.11"
 slug: "bess_manager"
 init: false
 arch:
@@ -87,10 +87,6 @@ options:
     local_load_power: "sensor.rkm0d7n04x_local_load_power"           # Home consumption
     import_power: "sensor.rkm0d7n04x_import_power"                   # Grid import
     export_power: "sensor.rkm0d7n04x_export_power"                   # Grid export
-    # High-resolution net grid power sensor (~5s updates): positive = import (W), negative = export (W)
-    # When set, used as primary source for historical import/export kWh per period (most accurate)
-    # Leave empty to fall back to lifetime counter deltas
-    net_grid_power: ""                                                # e.g. "sensor.p1_net_power"
     battery_charge_power: "sensor.rkm0d7n04x_battery_1_charging_w"     # Battery charging power
     battery_discharge_power: "sensor.rkm0d7n04x_battery_1_discharging_w"  # Battery discharging power
     # === Real-time Power Sensors (Advanced/Diagnostic - not required) ===
@@ -188,7 +184,6 @@ schema:
     local_load_power: str
     import_power: str
     export_power: str
-    net_grid_power: str?
     output_power: str
     self_power: str
     system_power: str

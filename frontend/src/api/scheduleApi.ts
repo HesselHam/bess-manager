@@ -171,7 +171,6 @@ export interface DashboardResponse {
     batteryChargePowerW: number;
     batteryDischargePowerW: number;
     netBatteryPowerW: number;
-    netGridPowerW: number;
     acPowerW: number;
     selfPowerW: number;
     
@@ -183,7 +182,6 @@ export interface DashboardResponse {
     batteryChargePowerFormatted: string;
     batteryDischargePowerFormatted: string;
     netBatteryPowerFormatted: string;
-    netGridPowerFormatted: string;
     acPowerFormatted: string;
     selfPowerFormatted: string;
   };

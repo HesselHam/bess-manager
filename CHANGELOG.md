@@ -5,6 +5,12 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.11] - 2026-03-24
+
+### Removed
+
+- `net_grid_power` sensor logic removed: `get_net_grid_power()` method, METHOD_SENSOR_MAP entry, `netGridPower` in API response, and TypeScript interface fields. Grid import/export accuracy is now achieved by configuring P1 meter cumulative energy sensors in `lifetime_import_from_grid` / `lifetime_export_to_grid`.
+
 ## [7.9.10] - 2026-03-23
 
 ### Added

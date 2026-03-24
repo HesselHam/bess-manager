@@ -247,13 +247,6 @@ class HomeAssistantAPIController:
             "precision": 0,
             "conversion_threshold": 1000,
         },
-        "get_net_grid_power": {
-            "sensor_key": "net_grid_power",
-            "name": "Net Grid Power",
-            "unit": "W",
-            "precision": 0,
-            "conversion_threshold": 1000,
-        },
         "get_l1_current": {
             "sensor_key": "current_l1",
             "name": "Current L1",
@@ -1136,12 +1129,6 @@ class HomeAssistantAPIController:
         charge_power = self.get_battery_charge_power()
         discharge_power = self.get_battery_discharge_power()
         return charge_power - discharge_power
-
-    def get_net_grid_power(self):
-        """Get net grid power (positive = importing, negative = exporting) in watts."""
-        import_power = self.get_import_power()
-        export_power = self.get_export_power()
-        return import_power - export_power
 
     # Lifetime energy sensors (used by energy monitoring health checks)
     def get_battery_charged_lifetime(self):

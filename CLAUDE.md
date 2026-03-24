@@ -4,6 +4,75 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork-Specific Fixes
 
+## Session 2026-03-24: Cleanup & Table Fixes (v7.9.11–v7.9.14)
+
+### v7.9.11: Remove net_grid_power sensor logic
+
+**Why**: `net_grid_power` was a bidirectional power sensor (W, positive=import/negative=export)
+intended for real-time grid monitoring. It was never actually used in any frontend component —
+only defined in the type system and API. Grid import/export accuracy is now achieved by
+configuring P1 meter cumulative energy sensors directly in `config.yaml`:
+
+```yaml
+lifetime_import_from_grid: "sensor.p1_meter_energy_import"
+lifetime_export_to_grid:   "sensor.p1_meter_energy_export"
+```
+
+These are drop-in replacements for the Growatt lifetime sensors — both are cumulative kWh
+sensors so the existing delta calculation works identically.
+
+**Removed from**:
+
+- `core/bess/ha_api_controller.py`: `get_net_grid_power()` method and METHOD_SENSOR_MAP entry
+- `backend/api_dataclasses.py`: `netGridPower` field and `controller.get_net_grid_power()` call
+- `frontend/src/api/scheduleApi.ts`: `netGridPowerW` and `netGridPowerFormatted` type fields
+- `config.yaml`: `net_grid_power` sensor key and schema entry
+
+### v7.9.12: Suppress false-positive DP energy mismatch warnings
+
+**Why**: `dp_battery_algorithm.py` line 253 fired "Energy stored mismatch" warnings for
+near-zero power states during optimization state exploration. `power > 0` triggered even for
+floating-point artifacts (e.g. 0.001), giving `energy_stored ≈ 0.000` but `SOE delta = -0.050`,
+causing dozens of harmless warnings on every startup.
+
+**Fix**: Added `power > 0.1` guard so the sanity check only fires for meaningful charge power.
+
+### v7.9.13: Sticky header for Decision Details table
+
+**Why**: The table header scrolled out of view when the table had many rows.
+
+**Fix**: Wrapped the table in `<div className="max-h-[600px] overflow-y-auto">` inside the
+existing `overflow-x-auto` container. `sticky top-0` on `<thead>` now works correctly because
+`sticky` is relative to the nearest scroll ancestor — the new inner div — not the outer
+horizontal-scroll container (which was breaking it).
+
+### v7.9.14: Remove InfluxDB startup backfill for Decision Details
+
+**Why**: On startup, `_fetch_and_initialize_historical_data()` and `_fetch_historical_days()`
+backfilled all past periods from InfluxDB into the Decision Details table. This data was
+inaccurate (Growatt cumulative sensor resolution 0.1 kWh, SOC fallback to current live value,
+prices recalculated at current moment). User wanted actual values to only appear as periods
+complete in real-time.
+
+**What changed**: Both backfill calls removed from `start()` in `battery_system_manager.py`.
+
+**Side effect**: Caused "Incomplete Historical Data" warning on Dashboard because
+`get_historical_data_status()` checks the same `HistoricalDataStore` for missing periods.
+User chose to leave this as-is (v7.9.15 fix was pushed then reverted at user request).
+
+**Note on 7-day savings**: The Savings page shows today only, not a 7-day history. The
+"7-day" concept in the codebase is exclusively the consumption forecast for the DP optimizer
+(`influxdb_7d_avg` strategy). InfluxDB data is persistent across restarts — a multi-day
+savings view could be built in future using `collect_energy_data(period, date_offset=day_offset)`.
+
+### What the historical_store is used for
+
+- `get_historical_data_status()` → Dashboard "Incomplete Historical Data" warning
+- `/api/period_details` → Decision Details table (15-min resolution on Inverter page)
+- `/api/dashboard` → Today's energy flow charts (via `DailyView`)
+
+It is **not** used for the 7-day savings view or any persistent multi-day reporting.
+
 ## Session 2026-03-23: Decision Details Table Improvements (v7.9.10)
 
 ### What was built

@@ -248,8 +248,9 @@ def _calculate_reward(
         battery_wear_cost = energy_stored * battery_settings.cycle_cost_per_kwh
 
         # Sanity check: energy_stored should equal (next_soe - soe)
+        # Only warn for meaningful power values to avoid false positives from near-zero states
         expected_stored = next_soe - soe
-        if abs(energy_stored - expected_stored) > 0.01:
+        if power > 0.1 and abs(energy_stored - expected_stored) > 0.01:
             logger.warning(
                 f"Energy stored mismatch: calculated={energy_stored:.3f}, "
                 f"SOE delta={expected_stored:.3f}"

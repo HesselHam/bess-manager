@@ -1131,6 +1131,7 @@ async def get_inverter_status():
         battery_soc = 50.0
         battery_soe = 0.0
         grid_charge_enabled = False
+        charge_power_rate = 100.0
         discharge_power_rate = 100.0
         battery_charge_power = 0.0
         battery_discharge_power = 0.0
@@ -1140,6 +1141,7 @@ async def get_inverter_status():
             battery_soc = controller.get_battery_soc()
             battery_soe = (battery_soc / 100.0) * battery_settings.total_capacity
             grid_charge_enabled = controller.grid_charge_enabled()
+            charge_power_rate = controller.get_charging_power_rate()
             discharge_power_rate = controller.get_discharging_power_rate()
             battery_charge_power = controller.get_battery_charge_power()
             battery_discharge_power = controller.get_battery_discharge_power()
@@ -1155,6 +1157,7 @@ async def get_inverter_status():
             "grid_charge_enabled": grid_charge_enabled,
             "charge_stop_soc": 100.0,
             "discharge_stop_soc": battery_settings.min_soc,
+            "charge_power_rate": charge_power_rate,
             "discharge_power_rate": discharge_power_rate,
             "timestamp": datetime.now().isoformat(),
         }

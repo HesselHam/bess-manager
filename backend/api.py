@@ -1502,7 +1502,7 @@ async def get_period_details():
             )
             primary = planned if planned is not None else actual
             actual_charge_rate, actual_discharge_rate = _get_actual_rates(idx % 96, control_data or {})
-            is_missing = actual.data_source == "missing"
+            is_missing = actual.data_source in ("missing", "backfill")
             return {
                 "period": idx,
                 "time": f"{display // 4:02d}:{(display % 4) * 15:02d}",
@@ -1597,7 +1597,7 @@ async def get_period_details():
 
             # For past periods in the result, cross-reference with historical store
             actual = historical_store.get_period(period) if period < current_period else None
-            is_missing = actual is not None and actual.data_source == "missing"
+            is_missing = actual is not None and actual.data_source in ("missing", "backfill")
 
             actual_charge_rate, actual_discharge_rate = _get_actual_rates(display_period, control_data_today) if actual else (None, None)
 
@@ -1605,7 +1605,7 @@ async def get_period_details():
                 "period": period,
                 "time": time_str,
                 "date": today.isoformat(),
-                "dataSource": "actual" if actual and not is_missing else period_data.data_source,
+                "dataSource": actual.data_source if actual else period_data.data_source,
                 "isCurrent": period == current_period,
                 "buyPrice": round(period_data.economic.buy_price, 4),
                 "sellPrice": round(period_data.economic.sell_price, 4),

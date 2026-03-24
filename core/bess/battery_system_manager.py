@@ -274,12 +274,6 @@ class BatterySystemManager:
                 # Initialize schedule from inverter - preserves original logic
                 self._initialize_tou_schedule_from_inverter()
 
-                # Initialize historical data - using improved sensor collector
-                self._fetch_and_initialize_historical_data()
-
-                # Backfill past days for multi-day Decision Details history
-                self._fetch_historical_days()
-
                 # Fetch predictions
                 self._fetch_predictions()
 

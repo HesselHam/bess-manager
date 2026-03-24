@@ -953,8 +953,9 @@ const InverterStatusDashboard: React.FC = () => {
           {showPeriodDetails && (
             <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
               {periodDetails && periodDetails.periods.length > 0 ? (
+                <div className="max-h-[600px] overflow-y-auto">
                 <table className="min-w-full text-xs divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                  <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
                     <tr>
                       {/* Tijd */}
                       <th className="px-2 py-2 text-left font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Tijd</th>
@@ -1103,6 +1104,7 @@ const InverterStatusDashboard: React.FC = () => {
                     })()}
                   </tbody>
                 </table>
+                </div>
               ) : (
                 <div className="p-4 text-gray-500 dark:text-gray-400 text-sm">
                   Geen optimaliseringsdata beschikbaar

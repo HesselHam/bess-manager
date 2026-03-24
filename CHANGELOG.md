@@ -5,12 +5,6 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.9.15] - 2026-03-24
-
-### Fixed
-
-- Restored startup backfill to prevent "Incomplete Historical Data" warning. Backfilled periods now use `data_source="backfill"` so the Dashboard warning is suppressed, but actual* columns in the Decision Details table remain hidden for these periods. Only real-time collected periods show actual values.
-
 ## [7.9.14] - 2026-03-24
 
 ### Changed

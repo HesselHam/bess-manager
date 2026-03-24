@@ -274,9 +274,6 @@ class BatterySystemManager:
                 # Initialize schedule from inverter - preserves original logic
                 self._initialize_tou_schedule_from_inverter()
 
-                # Initialize historical data - using improved sensor collector
-                self._fetch_and_initialize_historical_data()
-
                 # Fetch predictions
                 self._fetch_predictions()
 
@@ -558,7 +555,7 @@ class BatterySystemManager:
                             period=period,  # For backward compatibility, still called 'hour'
                             energy=period_energy_data,
                             timestamp=datetime.now(tz=time_utils.TIMEZONE),
-                            data_source="backfill",
+                            data_source="actual",
                             economic=economic_data,
                             decision=DecisionData(
                                 strategic_intent=planned_intent or "IDLE",

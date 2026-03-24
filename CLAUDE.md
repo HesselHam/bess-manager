@@ -4,6 +4,99 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork-Specific Fixes
 
+## Session 2026-03-24 (part 2): Decision Details Chg%/Dchg% fixes (v7.9.15)
+
+### v7.9.15: Persistent HistoricalDataStore, fill(previous) for Chg%/Dchg%, show 0 as 0
+
+#### Problem analysis
+
+The Decision Details table Chg%/Dchg% columns were broken in three ways:
+
+1. **0% shown as `—`** — `fmtDual` in the frontend used `v === 0 ? '—' : v.toFixed(d)`, so
+   IDLE plan (discharge=0%) always showed `—` instead of `0`.
+
+2. **Actual values always `–`** — `_parse_avg_batch_response` computed mean values only for
+   periods that had a data point. `number.*` entities in InfluxDB only write on value change
+   (sparse). A period with no write got no entry → actual showed `–` even though the inverter
+   was still at the previous value.
+
+3. **Plan/actual data lost on restart** — `HistoricalDataStore` was purely in-memory.
+   Every restart wiped all plan and actual data, leaving the table empty until periods
+   completed in real-time.
+
+#### How plan % is calculated (no sensor reads involved)
+
+Plan Chg%/Dchg% come purely from `INTENT_TO_CONTROL` in `growatt_schedule.py`:
+
+```python
+INTENT_TO_CONTROL = {
+    "GRID_CHARGING":     {"charge_rate": 100, "discharge_rate": 0},
+    "SOLAR_STORAGE":     {"charge_rate": 100, "discharge_rate": 100},
+    "LOAD_SUPPORT":      {"charge_rate": 100, "discharge_rate": 100},
+    "EXPORT_ARBITRAGE":  {"charge_rate": 0,   "discharge_rate": 100},
+    "IDLE":              {"charge_rate": 100, "discharge_rate": 0},
+}
+```
+
+No sensor is read. The DP optimizer determines the intent → fixed mapping gives the %.
+
+#### How actual % is calculated
+
+1. `api.py` calls `controller.resolve_sensor_for_influxdb("battery_charging_power_rate")`
+2. Returns entity ID from live HA config (e.g. `number.growatt_min_3600tl_xh_battery_charge_power_limit`)
+3. `get_control_sensor_data_batch()` queries InfluxDB via Flux API for all data points today
+4. `_parse_avg_batch_response()` groups by 15-min period and computes mean per period
+5. **fill(previous)** (added in this version): last known value carried forward to periods
+   with no data point
+6. `api.py` looks up the value by `sensor.{entity_id}` key per period
+
+#### Important: config.yaml in repo ≠ live HA config
+
+`config.yaml` in the repo root contains **example/default values only**. The actual sensor
+IDs used at runtime come from the HA add-on options. Never assume repo values are live values.
+When sensor IDs are needed for analysis, ask the user to paste their config.
+
+#### What changed in v7.9.15
+
+**`frontend/src/components/InverterStatusDashboard.tsx`**
+
+- `fmtDual` got a `showZero` parameter (default `false`). Chg%/Dchg% pass `showZero=true`
+  so `0` renders as `"0"` not `"—"`.
+- When `actual === null`, plan is now always shown as a grey `<span>` (consistent with
+  other columns). Previously it rendered without styling.
+
+**`core/bess/influxdb_helper.py` — `_parse_avg_batch_response`**
+
+Added fill(previous) after computing per-period means:
+
+```python
+last_known: dict[str, float] = {}
+for period in range(96):
+    for sensor_name in all_sensor_names:
+        if period in period_data and sensor_name in period_data[period]:
+            last_known[sensor_name] = period_data[period][sensor_name]
+        elif sensor_name in last_known:
+            period_data.setdefault(period, {})[sensor_name] = last_known[sensor_name]
+```
+
+**`core/bess/historical_data_store.py` — persistence**
+
+- `STORE_VERSION = 1` constant for forward compatibility
+- `data_dir` parameter (default `/data`) — HA add-on persistent storage path
+- `_save()`: serializes all four dicts to `/data/historical_store.json` after every write
+- `_load()`: called in `__init__`, validates version, deserializes. On mismatch or any
+  error: deletes the file and starts fresh (no crash)
+- `_period_data_to_dict()` / `_period_data_from_dict()`: explicit field-by-field
+  serialization to avoid `init=False` field issues in `EnergyData` and `EconomicData`
+- `_save()` called after: `record_period`, `record_planned_period`,
+  `record_period_for_date`, `roll_over_to_historical`
+
+#### Limitation
+
+Actual Chg%/Dchg% before `number.*` entities were added to InfluxDB will always show `–`.
+fill(previous) only helps once there is a first data point to carry forward. Data before
+that point is permanently missing.
+
 ## Session 2026-03-24: Cleanup & Table Fixes (v7.9.11–v7.9.14)
 
 ### v7.9.11: Remove net_grid_power sensor logic

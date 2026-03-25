@@ -5,6 +5,12 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.19] - 2026-03-25
+
+### Fixed
+
+- Decision Details Chg%/Dchg% actual: fill(previous) with seed was not applied when InfluxDB returned empty response for today (no data yet). Early return on missing header now skipped so seed values always propagate to all periods.
+
 ## [7.9.18] - 2026-03-25
 
 ### Fixed

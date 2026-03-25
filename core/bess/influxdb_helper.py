@@ -977,12 +977,6 @@ def _parse_avg_batch_response(
     data_lines = [line for line in lines if not line.startswith("#")]
 
     col_map = _build_column_index(data_lines)
-    if col_map is None:
-        _LOGGER.warning("No header row found in control sensor batch response")
-        return {}
-
-    value_idx = col_map["_value"]
-    time_idx = col_map["_time"]
 
     day_start = datetime.combine(target_date, datetime.min.time()).replace(
         tzinfo=local_tz
@@ -990,7 +984,17 @@ def _parse_avg_batch_response(
 
     sensor_period_readings: dict[str, dict[int, list[float]]] = {}
 
-    for line in data_lines:
+    if col_map is None:
+        _LOGGER.warning("No header row found in control sensor batch response")
+        parse_lines: list[str] = []
+        value_idx = 0
+        time_idx = 0
+    else:
+        parse_lines = data_lines
+        value_idx = col_map["_value"]
+        time_idx = col_map["_time"]
+
+    for line in parse_lines:
         parts = line.split(",")
         try:
             if (

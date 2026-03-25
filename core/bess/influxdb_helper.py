@@ -866,6 +866,10 @@ def get_control_sensor_data_batch(control_sensors: list[str], target_date) -> di
             len(control_sensors),
         )
 
+        seed_values = _fetch_seed_values(
+            sensor_filter, start_str, url, bucket, username, password, headers
+        )
+
         response = requests.post(
             url=url,
             auth=(username, password),
@@ -885,7 +889,7 @@ def get_control_sensor_data_batch(control_sensors: list[str], target_date) -> di
                 "message": f"InfluxDB error: {response.status_code}",
             }
 
-        period_data = _parse_avg_batch_response(response.text, target_date, local_tz)
+        period_data = _parse_avg_batch_response(response.text, target_date, local_tz, seed_values)
 
         _LOGGER.info(
             "Control sensor batch complete: got data for %d periods", len(period_data)
@@ -901,8 +905,63 @@ def get_control_sensor_data_batch(control_sensors: list[str], target_date) -> di
         return {"status": "error", "message": f"Unexpected error: {e!s}"}
 
 
+def _fetch_seed_values(
+    sensor_filter: str,
+    start_str: str,
+    url: str,
+    bucket: str,
+    username: str,
+    password: str,
+    headers: dict,
+) -> dict[str, float]:
+    """Fetch the last known value for each sensor before start_str.
+
+    Used to seed fill(previous) so periods at the start of the day inherit
+    the last known value even if no change event occurred today.
+    """
+    seed_query = f"""from(bucket: "{bucket}")
+                    |> range(start: 1970-01-01T00:00:00Z, stop: {start_str})
+                    |> filter(fn: (r) => {sensor_filter})
+                    |> filter(fn: (r) => r["_field"] == "value")
+                    |> last()
+                    """
+    try:
+        response = requests.post(
+            url=url,
+            auth=(username, password),
+            headers=headers,
+            data=seed_query,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            return {}
+        lines = response.text.strip().split("\n")
+        data_lines = [line for line in lines if not line.startswith("#")]
+        col_map = _build_column_index(data_lines)
+        if col_map is None:
+            return {}
+        value_idx = col_map.get("_value")
+        if value_idx is None:
+            return {}
+        result: dict[str, float] = {}
+        for line in data_lines:
+            parts = line.split(",")
+            try:
+                if len(parts) <= value_idx or parts[value_idx].strip() == "_value":
+                    continue
+                sensor_name = _extract_sensor_name(parts, col_map)
+                if not sensor_name:
+                    continue
+                result[sensor_name] = float(parts[value_idx].strip())
+            except (IndexError, ValueError, TypeError):
+                continue
+        return result
+    except Exception:
+        return {}
+
+
 def _parse_avg_batch_response(
-    response_text: str, target_date, local_tz
+    response_text: str, target_date, local_tz, seed_values: dict[str, float] | None = None
 ) -> dict[int, dict[str, float]]:
     """Parse control sensor response: compute mean value per period (no unit conversion).
 
@@ -973,13 +1032,16 @@ def _parse_avg_batch_response(
                 period_data[period] = {}
             period_data[period][sensor_name] = mean_val
 
-    # Fill(previous): carry last known value forward to periods with no data
+    # Fill(previous): carry last known value forward to periods with no data.
+    # Seed from values before today so period 0 already has a known value.
+    # For periods with data: update last_known with the last raw value (not mean),
+    # so the carry-forward reflects the actual final setting of that period.
     all_sensor_names = set(sensor_period_readings.keys())
-    last_known: dict[str, float] = {}
+    last_known: dict[str, float] = dict(seed_values) if seed_values else {}
     for period in range(96):
         for sensor_name in all_sensor_names:
             if period in period_data and sensor_name in period_data[period]:
-                last_known[sensor_name] = period_data[period][sensor_name]
+                last_known[sensor_name] = sensor_period_readings[sensor_name][period][-1]
             elif sensor_name in last_known:
                 if period not in period_data:
                     period_data[period] = {}

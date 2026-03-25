@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.17] - 2026-03-25
+
+### Fixed
+
+- Decision Details Chg%/Dchg% actual: seed fill(previous) with last known value before midnight so all periods from 00:00 show correct actual rates even when no change event occurred today.
+- Decision Details Chg%/Dchg% actual: fill(previous) now carries the last raw value of a period forward (not the mean), so subsequent empty periods correctly reflect the final inverter setting.
+
 ## [7.9.16] - 2026-03-24
 
 ### Fixed

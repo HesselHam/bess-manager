@@ -1036,7 +1036,7 @@ def _parse_avg_batch_response(
     # Seed from values before today so period 0 already has a known value.
     # For periods with data: update last_known with the last raw value (not mean),
     # so the carry-forward reflects the actual final setting of that period.
-    all_sensor_names = set(sensor_period_readings.keys())
+    all_sensor_names = set(sensor_period_readings.keys()) | set(seed_values.keys() if seed_values else [])
     last_known: dict[str, float] = dict(seed_values) if seed_values else {}
     for period in range(96):
         for sensor_name in all_sensor_names:

@@ -4,6 +4,71 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork-Specific Fixes
 
+## Session 2026-03-25: Chg%/Dchg% actual fixes (v7.9.15–v7.9.19)
+
+### What was fixed and why
+
+The Decision Details table Chg%/Dchg% actual column was broken in multiple ways, fixed across several versions:
+
+**v7.9.15**: `fmtDual` showed `0` as `—`. Fixed by adding `showZero` parameter.
+HistoricalDataStore made persistent to `/data/historical_store.json`.
+fill(previous) added to `_parse_avg_batch_response` for sparse InfluxDB data.
+
+**v7.9.17–v7.9.19**: fill(previous) with seed — the root cause chain:
+
+1. `number.*` entities in InfluxDB only write on value change (sparse). Periods
+   without a change event had no data → showed `–` even though inverter was
+   still at same value.
+
+2. fill(previous) was added but used `mean` as carry-forward value. If two data
+   points existed in a period (e.g. 45% → 100% within seconds), the mean (73%)
+   was carried forward instead of the last raw value (100%). Fixed: fill(previous)
+   now uses `last raw value` of a period as seed for the next.
+
+3. fill(previous) seed was empty at start of day — if no change event occurred
+   today, `last_known` started empty. Fixed: `_fetch_seed_values()` queries
+   `last()` before midnight to seed fill(previous) from the DB.
+
+4. `all_sensor_names` was built from today's data only. Sensors with no data
+   today were absent from the fill loop even with seed values. Fixed: seed sensor
+   names merged into `all_sensor_names`.
+
+5. Empty InfluxDB response (200 with empty body) caused `_parse_avg_batch_response`
+   to return `{}` early before fill(previous) ran. Fixed: early return removed,
+   fill(previous) always runs even with empty response.
+
+### Key insight: config.yaml ≠ live HA config
+
+`config.yaml` in repo root has example/default values. Live sensor IDs come from
+HA add-on options. When sensor IDs are needed, always ask user to paste their config.
+Do NOT reference config.yaml values as if they are live values.
+
+### Pending to-do (next session)
+
+1. Altijd plan tonen in Chg%/Dchg% ook als actual ontbreekt (consistent format)
+2. HistoricalDataStore persistent maken naar `/data/` (v7.9.15 had this, check if still in)
+3. Verwijder debug logging `=== SCHEDULE CREATION DEBUG START ===` in `battery_system_manager.py`
+4. Verwijder ongebruikte componenten `EnergySankeyChart` en `TableBatteryDecisionExplorer`
+5. Verwijder `_load_and_apply_settings()` in `app.py` (nooit aangeroepen)
+
+### How actual Chg%/Dchg% works (per 2026-03-25)
+
+1. `api.py` calls `get_control_sensor_data_batch(sensors, target_date)`
+2. `_fetch_seed_values()` queries `last()` before midnight → seeds fill(previous)
+3. Main Flux query fetches all data points for target_date
+4. `_parse_avg_batch_response()`: groups by 15-min period, computes mean per period
+5. fill(previous): carries `last raw value` forward to empty periods, seeded from DB
+6. `api.py` looks up `sensor.{entity_id}` key per period in result
+
+### Code review findings (2026-03-25, not yet fixed)
+
+- `camel_to_snake()` duplicated in `api_conversion.py` and `settings.py`
+- `_load_and_apply_settings()` in `app.py` never called
+- `EnergySankeyChart.tsx` and `TableBatteryDecisionExplorer.tsx` unused
+- Debug logging in `battery_system_manager.py` line ~1489
+- 22+ `hasattr` checks violating deterministic design principle
+- Hardcoded fallbacks in `SavingsPage.tsx` (totalCapacity: 10, etc.)
+
 ## Session 2026-03-24 (part 3): Battery Settings card Charge Power Rate fix (v7.9.16)
 
 ### v7.9.16: Fix Charge Power Rate showing hardcoded 40% instead of live sensor

@@ -81,20 +81,15 @@ class HomePowerMonitor:
 
     def check_health(self) -> list:
         """Check the health of the Power Monitor component."""
-        # Define what controller methods this component uses
-        # Single-phase systems only need L1; three-phase needs all three
-        if self.home_settings.phase_count == 1:
-            power_methods = [
-                "get_l1_current",
-                "get_charging_power_rate",
-            ]
+        inverter_phase = self.home_settings.inverter_phase
+        if inverter_phase:
+            current_methods = [f"get_{inverter_phase.lower()}_current"]
+        elif self.home_settings.phase_count == 1:
+            current_methods = ["get_l1_current"]
         else:
-            power_methods = [
-                "get_l1_current",
-                "get_l2_current",
-                "get_l3_current",
-                "get_charging_power_rate",
-            ]
+            current_methods = ["get_l1_current", "get_l2_current", "get_l3_current"]
+
+        power_methods = current_methods + ["get_charging_power_rate"]
 
         # For power monitoring, since the component itself is optional, all methods are optional
         # System can operate without power monitoring - it's an enhancement feature
@@ -111,76 +106,83 @@ class HomePowerMonitor:
 
         return [health_check]
 
+    def _get_phase_voltage(self, phase: str) -> float:
+        """Get live voltage for a phase, falling back to config voltage if sensor unavailable."""
+        fallback = float(self.home_settings.voltage)
+        try:
+            if phase == "L1":
+                return self.controller.get_l1_voltage() or fallback
+            if phase == "L2":
+                return self.controller.get_l2_voltage() or fallback
+            if phase == "L3":
+                return self.controller.get_l3_voltage() or fallback
+        except Exception:
+            pass
+        return fallback
+
+    def _get_phase_load_w(self, phase: str) -> float:
+        """Get current load in watts for a single phase."""
+        phase_map = {
+            "L1": self.controller.get_l1_current,
+            "L2": self.controller.get_l2_current,
+            "L3": self.controller.get_l3_current,
+        }
+        current = phase_map[phase]()
+        voltage = self._get_phase_voltage(phase)
+        return current * voltage
+
     def get_current_phase_loads_w(self) -> tuple[float, ...]:
         """Get current load on each phase in watts.
 
         Returns a tuple with one element per phase (1 for single-phase, 3 for three-phase).
         """
-        voltage = self.home_settings.voltage
-
         if self.home_settings.phase_count == 1:
-            l1_current = self.controller.get_l1_current()
-            return (l1_current * voltage,)
-
-        l1_current = self.controller.get_l1_current()
-        l2_current = self.controller.get_l2_current()
-        l3_current = self.controller.get_l3_current()
+            return (self._get_phase_load_w("L1"),)
 
         return (
-            l1_current * voltage,
-            l2_current * voltage,
-            l3_current * voltage,
+            self._get_phase_load_w("L1"),
+            self._get_phase_load_w("L2"),
+            self._get_phase_load_w("L3"),
         )
 
     def calculate_available_charging_power(self) -> float:
-        """Calculate safe battery charging power based on most loaded phase and target power."""
-        phase_count = self.home_settings.phase_count
+        """Calculate safe battery charging power based on inverter phase load and target power.
 
-        # Get current loads in watts (variable-length tuple matching phase count)
-        phase_loads = self.get_current_phase_loads_w()
+        If inverter_phase is configured, only that phase is evaluated and the full battery
+        max power applies to it (single-phase inverter on multi-phase grid).
+        If inverter_phase is empty, the most loaded phase is used and battery power is
+        distributed across all phases (three-phase inverter).
+        """
+        inverter_phase = self.home_settings.inverter_phase
 
-        # Find most loaded phase in watts
-        max_load_w = max(phase_loads)
-        max_load_pct = (max_load_w / self.max_power_per_phase) * 100
+        if inverter_phase:
+            # Single-phase inverter: only look at the inverter phase
+            load_w = self._get_phase_load_w(inverter_phase)
+            available_power_w = self.max_power_per_phase - load_w
+            max_battery_power_w = self.max_charge_power_w
+            phase_log = f"Inverter phase {inverter_phase}: {load_w:.0f}W ({(load_w / self.max_power_per_phase) * 100:.1f}%)"
+        else:
+            # Three-phase inverter: use most loaded phase, distribute battery power
+            phase_loads = self.get_current_phase_loads_w()
+            load_w = max(phase_loads)
+            available_power_w = self.max_power_per_phase - load_w
+            max_battery_power_w = self.max_charge_power_w / self.home_settings.phase_count
+            phase_parts = []
+            for i, pl in enumerate(phase_loads):
+                pct = (pl / self.max_power_per_phase) * 100
+                phase_parts.append(f"L{i + 1}: {pl:.0f}W ({pct:.1f}%)")
+            phase_log = "Phase loads: " + ", ".join(phase_parts)
 
-        # Calculate available power on most loaded phase
-        available_power_w = self.max_power_per_phase - max_load_w
-
-        # Max battery power per phase (distributed across phases)
-        max_battery_power_per_phase_w = self.max_charge_power_w / phase_count
-
-        # Calculate available charging power as percentage of battery's max power
-        # This is the correct calculation: available power relative to what the battery needs
-        if max_battery_power_per_phase_w > 0:
-            available_pct = (available_power_w / max_battery_power_per_phase_w) * 100
+        if max_battery_power_w > 0:
+            available_pct = (available_power_w / max_battery_power_w) * 100
         else:
             available_pct = 0
 
-        # Limit by target charging power
         charging_power_pct = min(available_pct, self.target_charging_power_pct)
 
-        # Log phase loads
-        if phase_count == 1:
-            pct = (phase_loads[0] / self.max_power_per_phase) * 100
-            phase_log = f"Phase load: {phase_loads[0]:.0f}W ({pct:.1f}%)"
-        else:
-            phase_parts = []
-            for i, load in enumerate(phase_loads):
-                pct = (load / self.max_power_per_phase) * 100
-                phase_parts.append(f"#{i + 1}: {load:.0f}W ({pct:.1f}%)")
-            phase_log = "Phase loads: " + ", ".join(phase_parts)
-
-        log_message = (
-            "%s\n"
-            "Most loaded phase: %.1f%%\n"
-            "Available power: %.0fW (%.1f%% of battery max per phase)\n"
-            "Target charging: %.1f%%\n"
-            "Recommended charging: %.1f%%"
-        )
         logger.info(
-            log_message,
+            "%s\nAvailable power: %.0fW (%.1f%% of battery max)\nTarget charging: %.1f%%\nRecommended charging: %.1f%%",
             phase_log,
-            max_load_pct,
             available_power_w,
             available_pct,
             self.target_charging_power_pct,

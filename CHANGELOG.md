@@ -5,6 +5,17 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.20] - 2026-03-25
+
+### Added
+
+- Power monitor: `inverter_phase` config option (L1/L2/L3) to specify which phase a single-phase inverter is connected to. When set, only that phase is monitored and battery max power is not divided across phases. When empty, existing 3-phase logic applies.
+- Power monitor: optional `voltage_l1/l2/l3` sensor config for live per-phase voltage readings. When configured, wattage is calculated as live V × A instead of fixed 230V × A. Falls back to configured `voltage` value when sensor is unavailable.
+
+### Fixed
+
+- Power monitor: `max_charge_discharge_power` config key now correctly maps to `max_charge_power_kw` and `max_discharge_power_kw`. Previously the key mismatch caused the default 15kW to be used instead of the configured value.
+
 ## [7.9.19] - 2026-03-25
 
 ### Fixed

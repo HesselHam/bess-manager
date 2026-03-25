@@ -149,12 +149,12 @@ class BatterySettings:
             self.total_capacity = battery_config.get(
                 "total_capacity", BATTERY_STORAGE_SIZE_KWH
             )
-            self.max_charge_power_kw = battery_config.get(
-                "max_charge_power_kw", BATTERY_MAX_CHARGE_DISCHARGE_POWER_KW
+            max_power = battery_config.get(
+                "max_charge_discharge_power",
+                battery_config.get("max_charge_power_kw", BATTERY_MAX_CHARGE_DISCHARGE_POWER_KW),
             )
-            self.max_discharge_power_kw = battery_config.get(
-                "max_discharge_power_kw", BATTERY_MAX_CHARGE_DISCHARGE_POWER_KW
-            )
+            self.max_charge_power_kw = max_power
+            self.max_discharge_power_kw = max_power
             self.cycle_cost_per_kwh = battery_config.get(
                 "cycle_cost_per_kwh", BATTERY_CHARGE_CYCLE_COST
             )
@@ -178,6 +178,7 @@ class HomeSettings:
     currency: str = DEFAULT_CURRENCY
     consumption_strategy: str = "sensor"
     history_days: int = 1
+    inverter_phase: str = ""
 
     def __post_init__(self):
         assert self.phase_count in (
@@ -185,6 +186,9 @@ class HomeSettings:
             3,
         ), f"phase_count must be 1 or 3, got {self.phase_count}"
         assert self.history_days >= 1, f"history_days must be >= 1, got {self.history_days}"
+        assert self.inverter_phase in (
+            "", "L1", "L2", "L3"
+        ), f"inverter_phase must be '', 'L1', 'L2' or 'L3', got {self.inverter_phase}"
 
     def update(self, **kwargs: Any) -> None:
         """Update settings from dict."""
@@ -218,6 +222,7 @@ class HomeSettings:
                 "consumption_strategy", "sensor"
             )
             self.history_days = home_config.get("history_days", 1)
+            self.inverter_phase = home_config.get("inverter_phase", "")
             self.__post_init__()
         return self
 

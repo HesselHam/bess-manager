@@ -268,6 +268,27 @@ class HomeAssistantAPIController:
             "precision": 1,
             "conversion_threshold": None,
         },
+        "get_l1_voltage": {
+            "sensor_key": "voltage_l1",
+            "name": "Voltage L1",
+            "unit": "V",
+            "precision": 1,
+            "conversion_threshold": None,
+        },
+        "get_l2_voltage": {
+            "sensor_key": "voltage_l2",
+            "name": "Voltage L2",
+            "unit": "V",
+            "precision": 1,
+            "conversion_threshold": None,
+        },
+        "get_l3_voltage": {
+            "sensor_key": "voltage_l3",
+            "name": "Voltage L3",
+            "unit": "V",
+            "precision": 1,
+            "conversion_threshold": None,
+        },
         # Energy totals
         # Home consumption forecast
         "get_estimated_consumption": {
@@ -950,6 +971,18 @@ class HomeAssistantAPIController:
     def get_l3_current(self):
         """Get the current load for L3."""
         return self._get_sensor_value("current_l3")
+
+    def get_l1_voltage(self):
+        """Get the voltage for L1."""
+        return self._get_sensor_value("voltage_l1")
+
+    def get_l2_voltage(self):
+        """Get the voltage for L2."""
+        return self._get_sensor_value("voltage_l2")
+
+    def get_l3_voltage(self):
+        """Get the voltage for L3."""
+        return self._get_sensor_value("voltage_l3")
 
     def _parse_solar_forecast(self, sensor_key: str) -> list[float]:
         """Fetch and parse Solcast detailedHourly data into 96 quarterly values.

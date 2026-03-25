@@ -193,9 +193,11 @@ class HomePowerMonitor:
 
     def adjust_battery_charging(self) -> None:
         if not self.controller.grid_charge_enabled():
-            return
-
-        target_power = self.calculate_available_charging_power()
+            # Grid charge is off: set the inverter to the intended rate so it is
+            # ready when grid charging activates on the next schedule update.
+            target_power = self.target_charging_power_pct
+        else:
+            target_power = self.calculate_available_charging_power()
         current_power = self.controller.get_charging_power_rate()
 
         # Skip if no change needed (within 1% tolerance)

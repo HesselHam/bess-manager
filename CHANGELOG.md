@@ -5,6 +5,12 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.21] - 2026-03-25
+
+### Fixed
+
+- Power monitor: when grid charge is off, charge rate is now set to the intended percentage (e.g. 100%) instead of being skipped. This ensures the inverter is correctly configured when grid charging activates on the next schedule update.
+
 ## [7.9.20] - 2026-03-25
 
 ### Added

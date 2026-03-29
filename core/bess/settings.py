@@ -50,6 +50,7 @@ BATTERY_MIN_ACTION_PROFIT_THRESHOLD = (
 BATTERY_DEFAULT_CHARGING_POWER_RATE = 40  # percentage
 BATTERY_EFFICIENCY_CHARGE = 0.97  # Mix of solar (98%) and grid (95%) charging
 BATTERY_EFFICIENCY_DISCHARGE = 0.95  # DC-AC conversion losses
+BATTERY_IDLE_DEADBAND_PCT = 2.0  # IDLE mode: max SOE deviation as % of usable capacity
 
 # Default LFP temperature derating curve: (temp_celsius, charge_rate_percent)
 # Based on LFP battery characteristics (Battery University, manufacturer data)
@@ -121,6 +122,7 @@ class BatterySettings:
     )
     efficiency_charge: float = BATTERY_EFFICIENCY_CHARGE
     efficiency_discharge: float = BATTERY_EFFICIENCY_DISCHARGE
+    idle_deadband_pct: float = BATTERY_IDLE_DEADBAND_PCT
     reserved_capacity: float = field(init=False)
     min_soe_kwh: float = field(init=False)
     max_soe_kwh: float = field(init=False)
@@ -160,6 +162,9 @@ class BatterySettings:
             )
             self.min_action_profit_threshold = battery_config.get(
                 "min_action_profit_threshold", BATTERY_MIN_ACTION_PROFIT_THRESHOLD
+            )
+            self.idle_deadband_pct = battery_config.get(
+                "idle_deadband_pct", BATTERY_IDLE_DEADBAND_PCT
             )
             self.__post_init__()
         return self

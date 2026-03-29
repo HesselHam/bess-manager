@@ -406,7 +406,8 @@ def extract_economic_values_from_reward(
 
 
 def create_decision_data(
-    power: float,
+    mode: str,
+    battery_action: float,
     energy_data: EnergyData,
     hour: int,
     cost_basis: float,
@@ -416,7 +417,6 @@ def create_decision_data(
     battery_wear_cost: float,
     buy_price: float,
     sell_price: float,
-    dt: float,
     currency: str,
 ) -> DecisionData:
     """
@@ -443,22 +443,8 @@ def create_decision_data(
     Returns:
         Enhanced DecisionData with all fields populated including advanced flow patterns
     """
-    # Determine strategic intent based on actual energy flows
-    # CRITICAL: Intent controls hardware behavior via Growatt schedule
-    # Must accurately reflect actual action, not just economic conditions
-    if power < -0.1:  # Discharging
-        # Check actual flows: are we exporting to grid?
-        if energy_data.battery_to_grid > 0.1:
-            strategic_intent = "EXPORT_ARBITRAGE"
-        else:
-            strategic_intent = "LOAD_SUPPORT"
-    elif power > 0.1:  # Charging
-        if energy_data.grid_to_battery > 0.1:
-            strategic_intent = "GRID_CHARGING"
-        else:
-            strategic_intent = "SOLAR_STORAGE"
-    else:
-        strategic_intent = "IDLE"
+    # Mode is the strategic intent — determined at optimization time
+    strategic_intent = mode
 
     # Generate high-level strategic pattern name
     pattern_name = generate_strategic_pattern_name(strategic_intent, energy_data)
@@ -505,12 +491,9 @@ def create_decision_data(
         # For export strategies, this is the realization hour
         future_target_hours = [hour]
 
-    # Create DecisionData with only fields we can implement
-    # Convert power (kW) to energy (kWh) for consistency with other period data
-    battery_action_kwh = power * dt
     return DecisionData(
         strategic_intent=strategic_intent,
-        battery_action=battery_action_kwh,
+        battery_action=battery_action,
         cost_basis=cost_basis,
         pattern_name=pattern_name,
         description=description,

@@ -101,86 +101,170 @@ logger = logging.getLogger(__name__)
 
 # Algorithm parameters
 SOE_STEP_KWH = 0.1
-POWER_STEP_KW = 0.2
+
+# Discrete modes for battery control — replaces continuous power levels
+MODES = [
+    "HOLD",             # load_first, charge=0%, discharge=0%: solar wasted, all load from grid
+    "IDLE",             # load_first, charge=100%, discharge=100%: small fluctuations within deadband
+    "LOAD_SUPPORT",     # load_first, charge=100%, discharge=100%: battery supports home load
+    "SOLAR_STORAGE",    # battery_first, charge=100%, discharge=100%: store solar energy
+    "GRID_CHARGING",    # battery_first, grid_charge=True, charge=100%, discharge=100%: charge from grid
+    "EXPORT_ARBITRAGE", # grid_first, charge=100%, discharge=100%: sell stored energy
+]
 
 
 class StrategicIntent(Enum):
     """Strategic intents for battery actions, determined at decision time."""
 
     # Primary intents (mutually exclusive)
+    HOLD = "HOLD"  # No battery action, solar wasted
     GRID_CHARGING = "GRID_CHARGING"  # Storing cheap grid energy for arbitrage
     SOLAR_STORAGE = "SOLAR_STORAGE"  # Storing excess solar for later use
     LOAD_SUPPORT = "LOAD_SUPPORT"  # Discharging to meet home load
     EXPORT_ARBITRAGE = "EXPORT_ARBITRAGE"  # Discharging to grid for profit
-    IDLE = "IDLE"  # No significant action (includes natural solar export)
+    IDLE = "IDLE"  # Small fluctuations within deadband
 
 
-def _discretize_state_action_space(
-    battery_settings: BatterySettings,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Discretize state and action spaces - FIXED to return SOE levels."""
-    # State space: State of Energy (kWh)
-    soe_levels = np.arange(
+def _discretize_state_space(battery_settings: BatterySettings) -> np.ndarray:
+    """Return discretized SOE levels for DP state space."""
+    return np.arange(
         battery_settings.min_soe_kwh,
         battery_settings.max_soe_kwh + SOE_STEP_KWH,
         SOE_STEP_KWH,
     )
 
-    # Action space: power levels (kW)
-    max_power = max(
-        battery_settings.max_charge_power_kw, battery_settings.max_discharge_power_kw
-    )
-    power_levels = np.arange(
-        -max_power,
-        max_power + POWER_STEP_KW,
-        POWER_STEP_KW,
-    )
 
-    return soe_levels, power_levels
+def _calculate_mode_energy_flows(
+    mode: str,
+    soe: float,
+    solar: float,
+    consumption: float,
+    battery_settings: BatterySettings,
+    dt: float,
+    max_charge_power_override: float | None = None,
+) -> tuple[float, float, float, float, float]:
+    """Calculate energy flows for a given mode.
 
+    Args:
+        mode: One of MODES
+        soe: Current state of energy (kWh)
+        solar: Solar production this period (kWh)
+        consumption: Home consumption this period (kWh)
+        battery_settings: Battery configuration
+        dt: Period duration in hours
+        max_charge_power_override: Temperature derating limit (kW), or None
 
-def _state_transition(
-    soe: float, power: float, battery_settings: BatterySettings, dt: float
-) -> float:
+    Returns:
+        (battery_charge, battery_discharge, grid_imported, grid_exported, next_soe)
+        battery_charge: energy throughput into battery (kWh)
+        battery_discharge: energy throughput out of battery (kWh)
+        grid_imported: energy drawn from grid (kWh)
+        grid_exported: energy sent to grid (kWh)
+        next_soe: battery state of energy after period (kWh)
     """
-    Calculate the next state of energy based on current SOE and power action.
-
-    EFFICIENCY HANDLING:
-    - Charging: power x dt x efficiency = energy actually stored
-    - Discharging: power x dt / efficiency = energy removed from storage
-    This ensures that efficiency losses are properly accounted for in energy balance.
-    """
-    if power > 0:  # Charging
-        # Energy stored = power throughput x charging efficiency
-        charge_energy = power * dt * battery_settings.efficiency_charge
-        next_soe = min(battery_settings.max_soe_kwh, soe + charge_energy)
-
-    elif power < 0:  # Discharging
-        # Energy removed from storage = power throughput ÷ discharging efficiency
-        discharge_energy = abs(power) * dt / battery_settings.efficiency_discharge
-        available_energy = soe - battery_settings.min_soe_kwh
-        actual_discharge = min(discharge_energy, available_energy)
-        next_soe = soe - actual_discharge
-
-    else:  # Hold
-        next_soe = soe
-
-    # Ensure SOE stays within physical bounds
-    next_soe = min(
-        battery_settings.max_soe_kwh, max(battery_settings.min_soe_kwh, next_soe)
+    eff_c = battery_settings.efficiency_charge
+    eff_d = battery_settings.efficiency_discharge
+    max_c_kw = min(
+        battery_settings.max_charge_power_kw,
+        max_charge_power_override if max_charge_power_override is not None else battery_settings.max_charge_power_kw,
     )
+    max_d_kw = battery_settings.max_discharge_power_kw
 
-    return next_soe
+    # Max energy that can flow through battery this period
+    max_charge = min(max_c_kw * dt, (battery_settings.max_soe_kwh - soe) / eff_c)
+    max_discharge = min(max_d_kw * dt, (soe - battery_settings.min_soe_kwh) * eff_d)
+
+    if mode == "HOLD":
+        # AC output silent (discharge=0%), charge=0%: solar wasted, all load from grid
+        battery_charge = 0.0
+        battery_discharge = 0.0
+        grid_imported = consumption
+        grid_exported = 0.0
+
+    elif mode == "IDLE":
+        # Small fluctuations within deadband around current SOE
+        deadband = (battery_settings.idle_deadband_pct / 100.0) * (
+            battery_settings.max_soe_kwh - battery_settings.min_soe_kwh
+        )
+        solar_surplus = max(0.0, solar - consumption)
+        solar_deficit = max(0.0, consumption - solar)
+
+        battery_charge = min(solar_surplus, deadband, max_charge)
+        battery_discharge = min(solar_deficit, deadband, max_discharge)
+
+        solar_to_load = min(solar, consumption)
+        grid_imported = max(0.0, consumption - solar_to_load - battery_discharge)
+        grid_exported = max(0.0, solar_surplus - battery_charge)
+
+    elif mode == "LOAD_SUPPORT":
+        # Battery discharges to support load; solar surplus charges battery
+        solar_to_load = min(solar, consumption)
+        remaining_load = max(0.0, consumption - solar_to_load)
+
+        battery_discharge = min(remaining_load, max_discharge)
+        grid_imported = max(0.0, remaining_load - battery_discharge)
+
+        solar_surplus = max(0.0, solar - consumption)
+        battery_charge = min(solar_surplus, max_charge)
+        grid_exported = max(0.0, solar_surplus - battery_charge)
+
+    elif mode == "SOLAR_STORAGE":
+        # Store solar surplus in battery (battery_first); no discharge for load
+        solar_surplus = max(0.0, solar - consumption)
+        battery_charge = min(solar_surplus, max_charge)
+        battery_discharge = 0.0
+
+        solar_to_load = min(solar, consumption)
+        grid_imported = max(0.0, consumption - solar_to_load)
+        grid_exported = max(0.0, solar_surplus - battery_charge)
+
+    elif mode == "GRID_CHARGING":
+        # Charge from grid + solar at max rate (grid_charge=True)
+        battery_charge = max_charge  # Full rate, limited by capacity and derating
+        solar_surplus = max(0.0, solar - consumption)
+        solar_to_battery = min(solar_surplus, battery_charge)
+        grid_to_battery = battery_charge - solar_to_battery
+
+        solar_to_load = min(solar, consumption)
+        grid_imported = max(0.0, consumption - solar_to_load) + grid_to_battery
+        grid_exported = max(0.0, solar_surplus - solar_to_battery)
+        battery_discharge = 0.0
+
+    elif mode == "EXPORT_ARBITRAGE":
+        # Discharge battery to grid at max rate
+        battery_discharge = max_discharge
+        battery_charge = 0.0
+
+        solar_to_load = min(solar, consumption)
+        remaining_load = max(0.0, consumption - solar_to_load)
+        battery_to_load = min(remaining_load, battery_discharge)
+        battery_to_grid = battery_discharge - battery_to_load
+
+        grid_imported = max(0.0, remaining_load - battery_to_load)
+        solar_surplus = max(0.0, solar - consumption)
+        grid_exported = solar_surplus + battery_to_grid
+
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    # Compute next SOE from actual flows
+    next_soe = soe + battery_charge * eff_c - battery_discharge / eff_d
+    next_soe = min(battery_settings.max_soe_kwh, max(battery_settings.min_soe_kwh, next_soe))
+
+    return battery_charge, battery_discharge, grid_imported, grid_exported, next_soe
 
 
 def _calculate_reward(
-    power: float,
-    soe: float,  # State of Energy in kWh
-    next_soe: float,  # State of Energy in kWh
+    mode: str,
+    battery_charge: float,
+    battery_discharge: float,
+    grid_imported: float,
+    grid_exported: float,
+    soe: float,
+    next_soe: float,
     period: int,
     home_consumption: float,
     battery_settings: BatterySettings,
-    dt: float,
     buy_price: list[float],
     sell_price: list[float],
     solar_production: float,
@@ -188,49 +272,27 @@ def _calculate_reward(
     currency: str,
 ) -> tuple[float, float, PeriodData]:
     """
-    Calculate reward with proper cycle cost accounting and CORRECTED discharge profitability checks.
+    Calculate reward for a given mode with cycle cost accounting and profitability checks.
 
     CYCLE COST POLICY:
     - Applied only to charging operations (not discharging)
     - Applied to energy actually stored (after efficiency losses)
-    - Grid costs applied to energy throughput (what you draw from grid)
     - Cost basis includes BOTH grid costs AND cycle costs for profitability analysis
 
     PROFITABILITY CHECK:
-    - For any discharge, calculate the value of the discharged energy
-    - Value = max(avoiding grid purchases, grid export revenue)
-    - Discharge only profitable if this value > cost_basis
-    - Must account for discharge efficiency losses
-
-    Example for stored energy costing 2.61/kWh:
-    - If buy_price = 2.58, sell_price = 1.81
-    - Avoid purchase value: 2.58 x 0.95 = 2.45/kWh stored
-    - Export value: 1.81 x 0.95 = 1.72/kWh stored
-    - Best value: max(2.45, 1.72) = 2.45/kWh stored
-    - 2.45 < 2.61 → UNPROFITABLE (correctly blocked)
+    - Applied only to LOAD_SUPPORT and EXPORT_ARBITRAGE (discharge modes)
+    - Value = max(avoiding grid purchases, grid export revenue) per kWh stored
+    - Discharge blocked (returns -inf) if value <= cost_basis
     """
 
-    # Get prices for this period
     current_buy_price = buy_price[period]
     current_sell_price = sell_price[period]
 
-    # Calculate battery flows from power
-    battery_charged = max(0, power * dt) if power > 0 else 0.0
-    battery_discharged = max(0, -power * dt) if power < 0 else 0.0
-
-    # Simple energy balance for grid flows
-    energy_balance = (
-        solar_production + battery_discharged - home_consumption - battery_charged
-    )
-    grid_imported = max(0, -energy_balance)
-    grid_exported = max(0, energy_balance)
-
-    # EnergyData calculates ALL detailed flows automatically
     energy_data = EnergyData(
         solar_production=solar_production,
         home_consumption=home_consumption,
-        battery_charged=battery_charged,
-        battery_discharged=battery_discharged,
+        battery_charged=battery_charge,
+        battery_discharged=battery_discharge,
         grid_imported=grid_imported,
         grid_exported=grid_exported,
         battery_soe_start=soe,
@@ -240,142 +302,95 @@ def _calculate_reward(
     # ============================================================================
     # BATTERY CYCLE COST CALCULATION
     # ============================================================================
-    # Apply cycle cost ONLY to charging operations, ONLY to energy actually stored
-    energy_stored = 0.0  # Initialize for use in cost basis calculation
-    if power > 0:  # Charging
-        # Energy actually stored in battery (after efficiency losses)
-        energy_stored = power * dt * battery_settings.efficiency_charge
+    energy_stored = 0.0
+    if battery_charge > 0.0:
+        energy_stored = battery_charge * battery_settings.efficiency_charge
         battery_wear_cost = energy_stored * battery_settings.cycle_cost_per_kwh
 
-        # Sanity check: energy_stored should equal (next_soe - soe)
-        # Only warn for meaningful power values to avoid false positives from near-zero states
         expected_stored = next_soe - soe
-        if power > 0.1 and abs(energy_stored - expected_stored) > 0.01:
+        if battery_charge > 0.01 and abs(energy_stored - expected_stored) > 0.01:
             logger.warning(
                 f"Energy stored mismatch: calculated={energy_stored:.3f}, "
                 f"SOE delta={expected_stored:.3f}"
             )
-    else:  # Discharging or idle
+    else:
         battery_wear_cost = 0.0
 
     # ============================================================================
-    # COST BASIS CALCULATION
+    # PROFITABILITY CHECK (discharge modes only)
     # ============================================================================
-    # Cost basis includes ALL costs (grid + cycle) for proper profitability analysis
-    new_cost_basis = cost_basis
-
-    if power > 0:  # Charging - update cost basis with new energy costs
-        # Calculate costs by energy source
-        solar_available = max(0, solar_production - home_consumption)
-        solar_to_battery = min(
-            solar_available, power * dt
-        )  # Energy throughput from solar
-        grid_to_battery = max(
-            0, (power * dt) - solar_to_battery
-        )  # Energy throughput from grid
-
-        # Cost components:
-        # - Solar energy: "free" in terms of grid cost (but still has cycle cost)
-        # - Grid energy: pay buy price for energy drawn from grid
-        grid_energy_cost = (
-            grid_to_battery * current_buy_price
-        )  # Pay for grid throughput
-
-        # Include cycle cost in cost basis for proper profitability analysis
-        total_new_cost = (
-            grid_energy_cost + battery_wear_cost
-        )  # Include both grid and cycle costs
-        total_new_energy = energy_stored  # Use actual stored energy for cost basis
-
-        # Update weighted average cost basis
-        if next_soe > battery_settings.min_soe_kwh:
-            # Weighted average: (existing_energy x old_cost + new_energy x new_cost) / total_energy
-            existing_cost = soe * cost_basis
-            new_cost_basis = (existing_cost + total_new_cost) / next_soe
-        else:
-            # Battery was empty, cost basis is just the cost of new energy
-            new_cost_basis = (
-                (total_new_cost / total_new_energy)
-                if total_new_energy > 0
-                else cost_basis
-            )
-
-    elif power < 0:  # Discharging
-        # Discharged energy can be used for:
-        # 1. Avoiding grid purchases (saves buy_price per kWh delivered)
-        # 2. Grid export (earns sell_price per kWh delivered)
-        #
-        # The value per kWh of stored energy is the HIGHER of these two options,
-        # accounting for discharge efficiency losses.
-
-        # Option 1: Value from avoiding grid purchases
+    if mode in ("LOAD_SUPPORT", "EXPORT_ARBITRAGE") and battery_discharge > 0.01:
         avoid_purchase_value = current_buy_price * battery_settings.efficiency_discharge
-
-        # Option 2: Value from grid export
         export_value = current_sell_price * battery_settings.efficiency_discharge
-
-        # Take the better option
         effective_value_per_kwh_stored = max(avoid_purchase_value, export_value)
 
-        # Profitability check: only discharge if value exceeds cost
         if effective_value_per_kwh_stored <= cost_basis:
-            # This discharge is unprofitable - prevent it
             logger.debug(
-                f"Period {period}: Unprofitable discharge blocked. "
+                f"Period {period}: Unprofitable {mode} blocked. "
                 f"Buy: {current_buy_price:.3f}, Sell: {current_sell_price:.3f}, "
-                f"Avoid value: {avoid_purchase_value:.3f}, Export value: {export_value:.3f}, "
                 f"Best value: {effective_value_per_kwh_stored:.3f} <= "
                 f"Cost basis: {cost_basis:.3f} {currency}/kWh stored"
             )
-
-            # Return negative infinity to prevent this action in optimization
             economic_data = EconomicData(
                 buy_price=current_buy_price,
                 sell_price=current_sell_price,
-                battery_cycle_cost=battery_wear_cost,
-                hourly_cost=float("inf"),  # Infinite cost to prevent this action
+                battery_cycle_cost=0.0,
+                hourly_cost=float("inf"),
                 grid_only_cost=home_consumption * current_buy_price,
                 solar_only_cost=max(0, home_consumption - solar_production)
                 * current_buy_price
                 - max(0, solar_production - home_consumption) * current_sell_price,
             )
-            # Store battery_action as energy (kWh) per period for consistency with other energy values
-            battery_action_kwh = power * dt
-            decision_data = DecisionData(
-                strategic_intent="IDLE",
-                battery_action=battery_action_kwh,
-                cost_basis=cost_basis,
-            )
-            # Timestamp is set to None - caller will add timestamps based on optimization_period
-            # The algorithm is time-agnostic and operates on relative period indices (0 to horizon-1)
             period_data = PeriodData(
                 period=period,
                 energy=energy_data,
                 timestamp=None,
                 data_source="predicted",
                 economic=economic_data,
-                decision=decision_data,
+                decision=DecisionData(
+                    strategic_intent="IDLE",
+                    battery_action=0.0,
+                    cost_basis=cost_basis,
+                ),
             )
             return float("-inf"), cost_basis, period_data
 
     # ============================================================================
+    # COST BASIS CALCULATION
+    # ============================================================================
+    new_cost_basis = cost_basis
+
+    if battery_charge > 0.0:
+        solar_available = max(0.0, solar_production - home_consumption)
+        solar_to_battery = min(solar_available, battery_charge)
+        grid_to_battery = max(0.0, battery_charge - solar_to_battery)
+
+        grid_energy_cost = grid_to_battery * current_buy_price
+        total_new_cost = grid_energy_cost + battery_wear_cost
+
+        if next_soe > battery_settings.min_soe_kwh:
+            new_cost_basis = (soe * cost_basis + total_new_cost) / next_soe
+        else:
+            new_cost_basis = (
+                (total_new_cost / energy_stored) if energy_stored > 0 else cost_basis
+            )
+
+    # ============================================================================
     # REWARD CALCULATION
     # ============================================================================
-
-    # Calculate immediate economic reward (negative of total cost)
-    import_cost = energy_data.grid_imported * current_buy_price
-    export_revenue = energy_data.grid_exported * current_sell_price
-
-    # Total cost = grid costs + battery degradation costs
+    import_cost = grid_imported * current_buy_price
+    export_revenue = grid_exported * current_sell_price
     total_cost = import_cost - export_revenue + battery_wear_cost
-    reward = -total_cost  # Negative cost = positive reward
+    reward = -total_cost
 
     # ============================================================================
-    # DECISION DATA CREATION
+    # DECISION AND ECONOMIC DATA
     # ============================================================================
+    battery_action = battery_charge - battery_discharge
 
     decision_data = create_decision_data(
-        power=power,
+        mode=mode,
+        battery_action=battery_action,
         energy_data=energy_data,
         hour=period,
         cost_basis=new_cost_basis,
@@ -385,15 +400,9 @@ def _calculate_reward(
         battery_wear_cost=battery_wear_cost,
         buy_price=current_buy_price,
         sell_price=current_sell_price,
-        dt=dt,
         currency=currency,
     )
 
-    # ============================================================================
-    # ECONOMIC DATA CREATION
-    # ============================================================================
-
-    # Use standard economic calculation from EconomicData.from_energy_data()
     economic_data = EconomicData.from_energy_data(
         energy_data=energy_data,
         buy_price=current_buy_price,
@@ -401,12 +410,6 @@ def _calculate_reward(
         battery_cycle_cost=battery_wear_cost,
     )
 
-    # ============================================================================
-    # CREATE PERIOD DATA OBJECT
-    # ============================================================================
-
-    # Timestamp is set to None - caller will add timestamps based on optimization_period
-    # The algorithm is time-agnostic and operates on relative period indices (0 to horizon-1)
     new_period_data = PeriodData(
         period=period,
         energy=energy_data,
@@ -567,16 +570,13 @@ def _run_dynamic_programming(
 
     logger.debug("Starting DP optimization with PeriodData storage")
 
-    # Set defaults if not provided
     if solar_production is None:
         solar_production = [0.0] * horizon
     if initial_soe is None:
         initial_soe = battery_settings.min_soe_kwh
 
-    # Discretize state and action spaces (same as before)
-    soe_levels, power_levels = _discretize_state_action_space(battery_settings)
+    soe_levels = _discretize_state_space(battery_settings)
 
-    # Initialize DP arrays (same as before)
     V = np.zeros((horizon + 1, len(soe_levels)))
 
     # Terminal value: assign value to usable energy remaining at end of horizon
@@ -585,170 +585,81 @@ def _run_dynamic_programming(
             usable_energy = soe - battery_settings.min_soe_kwh
             V[horizon, i] = max(0.0, usable_energy) * terminal_value_per_kwh
 
-    policy = np.zeros((horizon, len(soe_levels)))
+    policy = np.zeros((horizon, len(soe_levels)), dtype=int)  # stores mode index
     C = np.full((horizon + 1, len(soe_levels)), initial_cost_basis)
 
-    # Store PeriodData objects calculated during DP
-    stored_period_data = {}  # Key: (t, i), Value: PeriodData
+    stored_period_data: dict = {}  # Key: (t, i), Value: PeriodData
 
-    # Backward induction (same structure as before)
+    # Backward induction over discrete modes
     for t in reversed(range(horizon)):
+        period_max_charge = (
+            max_charge_power_per_period[t]
+            if max_charge_power_per_period is not None
+            else None
+        )
+
         for i, soe in enumerate(soe_levels):
             best_value = float("-inf")
-            best_action = 0
+            best_mode_idx = 0  # default: HOLD
             best_cost_basis = C[t, i]
-            best_period_data = None  # Store the PeriodData from best action
+            best_next_soe = soe
+            best_period_data = None
 
-            # Per-period charge power limit (from temperature derating or None)
-            period_max_charge = (
-                max_charge_power_per_period[t]
-                if max_charge_power_per_period is not None
-                else None
-            )
-
-            # Try all possible actions
-            for power in power_levels:
-                # Skip physically impossible actions (same as before)
-                # Use tolerance for near-zero power due to floating-point precision in np.arange
-                # (e.g., "0.0" might be 2.2e-16 which would incorrectly match "power > 0")
-                power_tolerance = 0.001  # kW
-                if power < -power_tolerance:  # Discharging
-                    available_energy = soe - battery_settings.min_soe_kwh
-                    max_discharge_power = (
-                        available_energy / dt * battery_settings.efficiency_discharge
+            for mode_idx, mode in enumerate(MODES):
+                battery_charge, battery_discharge, grid_imported, grid_exported, next_soe = (
+                    _calculate_mode_energy_flows(
+                        mode=mode,
+                        soe=soe,
+                        solar=solar_production[t],
+                        consumption=home_consumption[t],
+                        battery_settings=battery_settings,
+                        dt=dt,
+                        max_charge_power_override=period_max_charge,
                     )
-                    if abs(power) > max_discharge_power:
-                        continue
-                elif power > power_tolerance:  # Charging
-                    # Apply temperature derating limit if provided
-                    if period_max_charge is not None and power > period_max_charge:
-                        continue
+                )
 
-                    available_capacity = battery_settings.max_soe_kwh - soe
-                    max_charge_power = (
-                        available_capacity / dt / battery_settings.efficiency_charge
-                    )
-                    if power > max_charge_power:
-                        continue
-                # else: IDLE (near-zero power) - no physical constraints to check
-
-                # Calculate next state
-                next_soe = _state_transition(soe, power, battery_settings, dt)
-                if (
-                    next_soe < battery_settings.min_soe_kwh
-                    or next_soe > battery_settings.max_soe_kwh
-                ):
-                    continue
-
-                # Calculate reward WITH PeriodData creation
                 reward, new_cost_basis, period_data = _calculate_reward(
-                    power=power,
+                    mode=mode,
+                    battery_charge=battery_charge,
+                    battery_discharge=battery_discharge,
+                    grid_imported=grid_imported,
+                    grid_exported=grid_exported,
                     soe=soe,
                     next_soe=next_soe,
                     period=t,
                     home_consumption=home_consumption[t],
                     battery_settings=battery_settings,
-                    dt=dt,
-                    solar_production=solar_production[t],
                     buy_price=buy_price,
                     sell_price=sell_price,
+                    solar_production=solar_production[t],
                     cost_basis=C[t, i],
                     currency=currency,
                 )
 
-                # Skip if unprofitable
                 if reward == float("-inf"):
                     continue
 
-                # Find next state index
                 next_i = round((next_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
                 next_i = min(max(0, next_i), len(soe_levels) - 1)
 
-                # Calculate total value
                 value = reward + V[t + 1, next_i]
 
-                # Update if better
                 if value > best_value:
                     best_value = value
-                    best_action = power
+                    best_mode_idx = mode_idx
                     best_cost_basis = new_cost_basis
+                    best_next_soe = next_soe
                     best_period_data = period_data
 
-            # Store results
             V[t, i] = best_value
-            policy[t, i] = best_action
+            policy[t, i] = best_mode_idx
+            stored_period_data[(t, i)] = best_period_data
 
-            # Store the PeriodData for this optimal decision
-            if best_period_data is not None:
-                stored_period_data[(t, i)] = best_period_data
-            else:
-                # No valid action found - create a default IDLE PeriodData
-                # This can happen at boundary states (e.g., max SOE with unprofitable discharge)
-                logger.warning(
-                    f"No valid action found for period {t}, state {i} (SOE={soe:.1f}). "
-                    f"Creating default IDLE state."
-                )
-                # Calculate IDLE scenario: no battery action, just grid covering consumption
-                idle_grid_imported = max(0, home_consumption[t] - solar_production[t])
-                idle_grid_exported = max(0, solar_production[t] - home_consumption[t])
-                idle_energy = EnergyData(
-                    solar_production=solar_production[t],
-                    home_consumption=home_consumption[t],
-                    battery_charged=0.0,
-                    battery_discharged=0.0,
-                    grid_imported=idle_grid_imported,
-                    grid_exported=idle_grid_exported,
-                    battery_soe_start=soe,
-                    battery_soe_end=soe,
-                )
-                idle_economic = EconomicData.from_energy_data(
-                    energy_data=idle_energy,
-                    buy_price=buy_price[t],
-                    sell_price=sell_price[t],
-                    battery_cycle_cost=0.0,
-                )
-                idle_decision = DecisionData(
-                    strategic_intent="IDLE",
-                    battery_action=0.0,
-                    cost_basis=C[t, i],
-                )
-                idle_period_data = PeriodData(
-                    period=t,
-                    energy=idle_energy,
-                    timestamp=None,
-                    data_source="predicted",
-                    economic=idle_economic,
-                    decision=idle_decision,
-                )
-                stored_period_data[(t, i)] = idle_period_data
-                # Also update V[t, i] to the actual IDLE cost (not -inf)
-                V[t, i] = -(
-                    idle_grid_imported * buy_price[t]
-                    - idle_grid_exported * sell_price[t]
-                )
-
-            # Update cost basis for next time step
-            if best_action != 0 and t + 1 < horizon:
-                next_soe = _state_transition(soe, best_action, battery_settings, dt)
-                next_i = round((next_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
+            # Propagate cost basis to next period
+            if t + 1 < horizon:
+                next_i = round((best_next_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
                 next_i = min(max(0, next_i), len(soe_levels) - 1)
                 C[t + 1, next_i] = best_cost_basis
-
-    # Final safety check
-    if max_charge_power_per_period is not None:
-        # Apply per-period charge limits
-        for t in range(horizon):
-            policy[t] = np.clip(
-                policy[t],
-                -battery_settings.max_discharge_power_kw,
-                max_charge_power_per_period[t],
-            )
-    else:
-        policy = np.clip(
-            policy,
-            -battery_settings.max_discharge_power_kw,
-            battery_settings.max_charge_power_kw,
-        )
 
     return V, policy, C, stored_period_data
 
@@ -926,11 +837,7 @@ def optimize_battery_schedule(
     # Step 2: Extract optimal path results directly from stored DP data
     hourly_results = []
     current_soe = initial_soe
-    soe_levels = np.arange(
-        battery_settings.min_soe_kwh,
-        battery_settings.max_soe_kwh + SOE_STEP_KWH,
-        SOE_STEP_KWH,
-    )
+    soe_levels = _discretize_state_space(battery_settings)
 
     for t in range(horizon):
         # Find current state index (same logic as simulation)

@@ -9,9 +9,10 @@ import { DataResolution } from '../hooks/useUserPreferences';
 const CHART_LEFT_OFFSET = 65;
 const CHART_RIGHT_OFFSET = 125;
 
-type StrategicIntent = 'GRID_CHARGING' | 'SOLAR_STORAGE' | 'LOAD_SUPPORT' | 'EXPORT_ARBITRAGE' | 'IDLE';
+type StrategicIntent = 'HOLD' | 'GRID_CHARGING' | 'SOLAR_STORAGE' | 'LOAD_SUPPORT' | 'EXPORT_ARBITRAGE' | 'IDLE';
 
 const INTENT_CONFIG: Record<StrategicIntent, { label: string; color: string; darkColor: string }> = {
+  HOLD: { label: 'Hold', color: '#6b7280', darkColor: '#4b5563' },
   GRID_CHARGING: { label: 'Grid Charging', color: '#a855f7', darkColor: '#a855f7' },
   SOLAR_STORAGE: { label: 'Solar Storage', color: '#eab308', darkColor: '#facc15' },
   LOAD_SUPPORT: { label: 'Load Support', color: '#3b82f6', darkColor: '#60a5fa' },
@@ -19,7 +20,7 @@ const INTENT_CONFIG: Record<StrategicIntent, { label: string; color: string; dar
   IDLE: { label: 'Idle', color: '#9ca3af', darkColor: '#6b7280' },
 };
 
-const INTENT_ORDER: StrategicIntent[] = ['GRID_CHARGING', 'SOLAR_STORAGE', 'LOAD_SUPPORT', 'EXPORT_ARBITRAGE', 'IDLE'];
+const INTENT_ORDER: StrategicIntent[] = ['HOLD', 'GRID_CHARGING', 'SOLAR_STORAGE', 'LOAD_SUPPORT', 'EXPORT_ARBITRAGE', 'IDLE'];
 
 interface BatteryModeTimelineProps {
   hourlyData: HourlyData[];

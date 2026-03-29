@@ -5,6 +5,17 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.22] - 2026-03-29
+
+### Changed
+
+- DP optimizer: replaced continuous power steps (37 levels × 0.2 kW) with 6 discrete inverter modes: HOLD, IDLE, LOAD_SUPPORT, SOLAR_STORAGE, GRID_CHARGING, EXPORT_ARBITRAGE. Each mode maps directly to Growatt inverter settings.
+- Battery control (dom instellen): every 15-min period, charge rate, discharge rate, and grid charge are unconditionally set from plan. No comparison with previous state.
+- IDLE mode: SOE deadband enforcement added to power monitor. Blocks charge when SOE drifts above `soe_start + deadband`, blocks discharge when below `soe_start - deadband`. Restores full rates when SOE returns to baseline. Configurable via `idle_deadband_pct` (default 2%).
+- Power monitor cadence: changed from every 5 minutes to every minute to support IDLE state machine.
+- HOLD mode added: battery fully preserved (charge=0%, discharge=0%), solar and grid supply load directly.
+- `INTENT_TO_CONTROL` revised to "dom instellen" principle: all modes use 100%/100% rates except HOLD (0%/0%). Actual behavior determined by Growatt battery mode.
+
 ## [7.9.21] - 2026-03-25
 
 ### Fixed

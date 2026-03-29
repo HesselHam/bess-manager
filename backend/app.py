@@ -266,10 +266,10 @@ class BESSController:
             misfire_grace_time=30,  # Allow 30 seconds of misfire before warning
         )
 
-        # Charging power adjustment (every 5 minutes)
+        # Charging power adjustment + IDLE state machine enforcement (every minute)
         self.scheduler.add_job(
             self.system.adjust_charging_power,
-            CronTrigger(minute="*/5"),
+            CronTrigger(minute="*"),
             misfire_grace_time=30,  # Allow 30 seconds of misfire before warning
         )
 

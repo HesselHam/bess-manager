@@ -96,29 +96,24 @@ class GrowattScheduleManager:
     # - load_first: Battery discharges to support home load (inverter default behavior)
     # - grid_first: Priority to export to grid
     INTENT_TO_MODE: ClassVar[dict[str, str]] = {
-        "GRID_CHARGING": "battery_first",  # Enable AC charging for arbitrage
+        "HOLD": "load_first",  # Battery preservation - no battery activity
+        "IDLE": "load_first",  # Normal operation, battery may float
+        "LOAD_SUPPORT": "load_first",  # Battery discharges to support home load
         "SOLAR_STORAGE": "battery_first",  # Priority to battery charging from solar
-        "LOAD_SUPPORT": "load_first",  # Priority to battery discharge for load
+        "GRID_CHARGING": "battery_first",  # Enable AC charging for arbitrage
         "EXPORT_ARBITRAGE": "grid_first",  # Priority to grid export for profit
-        "IDLE": "load_first",  # Normal operation, allows battery discharge
     }
 
-    # Map strategic intents to inverter control settings
-    # Each intent determines: grid_charge, charge_rate, discharge_rate
+    # Map strategic intents to inverter control settings.
+    # Rates are always 100% (dom instellen); the battery mode controls actual behavior.
+    # HOLD: charge=0%, discharge=0% — battery fully preserved.
     INTENT_TO_CONTROL: ClassVar[dict[str, dict[str, bool | int]]] = {
-        "GRID_CHARGING": {"grid_charge": True, "charge_rate": 100, "discharge_rate": 0},
-        "SOLAR_STORAGE": {
-            "grid_charge": False,
-            "charge_rate": 100,
-            "discharge_rate": 0,
-        },
-        "LOAD_SUPPORT": {"grid_charge": False, "charge_rate": 0, "discharge_rate": 100},
-        "EXPORT_ARBITRAGE": {
-            "grid_charge": False,
-            "charge_rate": 0,
-            "discharge_rate": 100,
-        },
-        "IDLE": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 0},
+        "HOLD": {"grid_charge": False, "charge_rate": 0, "discharge_rate": 0},
+        "IDLE": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
+        "LOAD_SUPPORT": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
+        "SOLAR_STORAGE": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
+        "GRID_CHARGING": {"grid_charge": True, "charge_rate": 100, "discharge_rate": 100},
+        "EXPORT_ARBITRAGE": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
     }
 
     def __init__(self, battery_settings: BatterySettings) -> None:
@@ -146,44 +141,6 @@ class GrowattScheduleManager:
         self.max_discharge_power_kw = battery_settings.max_discharge_power_kw
 
         # Fixed time slots configuration (9 slots, ~2h40m each)
-
-    def _calculate_power_rates_from_action(
-        self, battery_action_kw: float, intent: str
-    ) -> tuple[int, int]:
-        """Calculate charge and discharge power rates from battery action.
-
-        Args:
-            battery_action_kw: Battery action in kW (positive=charge, negative=discharge)
-            intent: Strategic intent for context
-
-        Returns:
-            Tuple of (charge_power_rate_percent, discharge_power_rate_percent)
-        """
-        # Thresholds for significant action
-        CHARGE_THRESHOLD = 0.1  # kW
-        DISCHARGE_THRESHOLD = 0.1  # kW
-
-        charge_rate = 0
-        discharge_rate = 0
-
-        if battery_action_kw > CHARGE_THRESHOLD:
-            # Charging action - calculate percentage of max charge power
-            charge_rate = min(
-                100, max(5, int((battery_action_kw / self.max_charge_power_kw) * 100))
-            )
-
-            # For grid charging, ensure minimum effective rate
-            if intent == "GRID_CHARGING" and charge_rate < 20:
-                charge_rate = 20  # Minimum 20% for effective grid charging
-
-        elif battery_action_kw < -DISCHARGE_THRESHOLD:
-            # Discharging action - calculate percentage of max discharge power
-            discharge_power = abs(battery_action_kw)
-            discharge_rate = min(
-                100, max(5, int((discharge_power / self.max_discharge_power_kw) * 100))
-            )
-
-        return charge_rate, discharge_rate
 
     def _get_hourly_intent(self, hour: int) -> str:
         """Get dominant strategic intent for an hour by aggregating 4 quarterly periods.
@@ -611,69 +568,28 @@ class GrowattScheduleManager:
         num_periods = len(self.strategic_intents)
         num_hours = (num_periods + 3) // 4  # Round up to handle partial hours
 
+        intent_to_state = {
+            "HOLD": "hold",
+            "IDLE": "idle",
+            "LOAD_SUPPORT": "discharging",
+            "SOLAR_STORAGE": "charging",
+            "GRID_CHARGING": "charging",
+            "EXPORT_ARBITRAGE": "grid_first",
+        }
+
         for hour in range(num_hours):
             # Get dominant strategic intent for this hour (aggregates 4 quarterly periods)
             intent = self._get_hourly_intent(hour)
 
-            # Get quarterly periods for battery action calculation
-            start_period = hour * 4
-            end_period = min(start_period + 4, num_periods)
-            hourly_periods = range(start_period, end_period)
-
-            # Get battery action for this hour if available
-            # Actions are in kWh (energy per period) - sum them for the hour
-            # Since each hour always has 4 quarterly periods, summing 4 periods gives the hourly total
-            # which equals average power in kW (4 periods * 0.25h * kW = kWh, so kWh/1h = kW)
-            battery_action = 0.0
-            if self.current_schedule and self.current_schedule.actions:
-                for period in hourly_periods:
-                    if period < len(self.current_schedule.actions):
-                        battery_action += self.current_schedule.actions[period]
-
-            # Calculate power rates from battery action
-            (
-                _charge_power_rate,
-                discharge_power_rate,
-            ) = self._calculate_power_rates_from_action(battery_action, intent)
-
-            # Determine settings based on strategic intent
-            if intent == "GRID_CHARGING":
-                grid_charge = True
-                discharge_rate = 0
-                # Always full power; power monitor caps to fuse headroom
-                charge_rate = 100
-                state = "charging"
-                batt_mode = "battery_first"
-
-            elif intent == "SOLAR_STORAGE":
-                grid_charge = False
-                discharge_rate = 0
-                charge_rate = 100
-                state = "charging" if battery_action > 0.01 else "idle"
-                batt_mode = "battery_first"
-
-            elif intent == "LOAD_SUPPORT":
-                grid_charge = False
-                discharge_rate = 100
-                charge_rate = 0
-                state = "discharging"
-                batt_mode = "load_first"
-
-            elif intent == "EXPORT_ARBITRAGE":
-                grid_charge = False
-                discharge_rate = discharge_power_rate
-                charge_rate = 0
-                state = "grid_first"
-                batt_mode = "grid_first"
-
-            elif intent == "IDLE":
-                grid_charge = False
-                discharge_rate = 0
-                charge_rate = 100
-                state = "idle"
-                batt_mode = self.INTENT_TO_MODE["IDLE"]
-            else:
+            if intent not in self.INTENT_TO_CONTROL:
                 raise ValueError(f"Unknown strategic intent at hour {hour}: {intent}")
+
+            control = self.INTENT_TO_CONTROL[intent]
+            grid_charge = control["grid_charge"]
+            charge_rate = control["charge_rate"]
+            discharge_rate = control["discharge_rate"]
+            batt_mode = self.INTENT_TO_MODE[intent]
+            state = intent_to_state[intent]
 
             self.hourly_settings[hour] = {
                 "grid_charge": grid_charge,
@@ -682,14 +598,12 @@ class GrowattScheduleManager:
                 "state": state,
                 "batt_mode": batt_mode,
                 "strategic_intent": intent,
-                "battery_action_kw": battery_action,
             }
 
             logger.debug(
-                "Hour %02d: Intent=%s, Action=%.2fkW, ChargeRate=%d%%, DischargeRate=%d%%, GridCharge=%s, Mode=%s",
+                "Hour %02d: Intent=%s, ChargeRate=%d%%, DischargeRate=%d%%, GridCharge=%s, Mode=%s",
                 hour,
                 intent,
-                battery_action,
                 charge_rate,
                 discharge_rate,
                 grid_charge,
@@ -880,13 +794,7 @@ class GrowattScheduleManager:
 
     def _strategic_intent_to_battery_mode(self, strategic_intent):
         """Convert strategic intent to Growatt battery mode."""
-        intent_to_mode = {
-            "IDLE": "load_first",
-            "GRID_CHARGING": "battery_first",
-            "SOLAR_STORAGE": "battery_first",
-            "EXPORT_ARBITRAGE": "grid_first",
-        }
-        return intent_to_mode.get(strategic_intent, "load_first")
+        return self.INTENT_TO_MODE.get(strategic_intent, "load_first")
 
     def _consolidate_and_convert_fallback(self):
         """Fallback conversion when no strategic intents are available."""
@@ -983,11 +891,12 @@ class GrowattScheduleManager:
     def _get_intent_description(self, intent: str) -> str:
         """Get human-readable description of strategic intent."""
         descriptions = {
-            "GRID_CHARGING": "Storing cheap grid energy for later use",
-            "SOLAR_STORAGE": "Storing excess solar energy for evening/night",
-            "LOAD_SUPPORT": "Using battery to support home consumption",
-            "EXPORT_ARBITRAGE": "Selling stored energy to grid for profit",
+            "HOLD": "Battery preserved - no charge or discharge",
             "IDLE": "No significant battery activity",
+            "LOAD_SUPPORT": "Using battery to support home consumption",
+            "SOLAR_STORAGE": "Storing excess solar energy for evening/night",
+            "GRID_CHARGING": "Storing cheap grid energy for later use",
+            "EXPORT_ARBITRAGE": "Selling stored energy to grid for profit",
         }
         return descriptions.get(intent, "Unknown intent")
 

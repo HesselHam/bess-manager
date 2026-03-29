@@ -2013,12 +2013,12 @@ class BatterySystemManager:
             raise
 
     def _apply_period_schedule(self, period: int) -> None:
-        """Apply period settings with proper charge/discharge power rates.
+        """Apply period settings by directly setting all inverter controls from plan.
 
-        Uses per-period strategic intent for full quarterly resolution control.
+        Dom instellen: every quarter, unconditionally set grid_charge, charge_rate,
+        and discharge_rate directly from INTENT_TO_CONTROL. No comparison with
+        previous state, no conditional logic.
         """
-
-        # Get current period's strategic intent (quarterly resolution)
         if period >= len(self._schedule_manager.strategic_intents):
             logger.warning(
                 "Period %d exceeds strategic intents length %d",
@@ -2028,92 +2028,39 @@ class BatterySystemManager:
             return
 
         strategic_intent = self._schedule_manager.strategic_intents[period]
-
-        # Get battery action for this specific period
-        # Note: actions now store energy (kWh) per period, convert to power (kW)
-        battery_action_kwh = 0.0
-        battery_action_kw = 0.0
-        if (
-            self._schedule_manager.current_schedule
-            and self._schedule_manager.current_schedule.actions
-        ):
-            if period < len(self._schedule_manager.current_schedule.actions):
-                battery_action_kwh = self._schedule_manager.current_schedule.actions[
-                    period
-                ]
-                # Convert kWh to kW: power = energy / time
-                # Calculate period duration from number of periods per day
-                num_periods = len(self._schedule_manager.current_schedule.actions)
-                period_duration_hours = 24.0 / num_periods
-                battery_action_kw = battery_action_kwh / period_duration_hours
-
-        # Determine charge/discharge rates based on period's strategic intent
-        if strategic_intent == "GRID_CHARGING":
-            grid_charge = True
-            discharge_rate = 0
-
-        elif strategic_intent == "SOLAR_STORAGE":
-            grid_charge = False
-            discharge_rate = 0
-
-        elif strategic_intent == "LOAD_SUPPORT":
-            grid_charge = False
-            discharge_rate = 100  # Full discharge for load support
-
-        elif strategic_intent == "EXPORT_ARBITRAGE":
-            grid_charge = False
-            # Calculate discharge rate from battery action
-            if battery_action_kw < -0.01:  # Discharging
-                discharge_power_pct = (
-                    abs(battery_action_kw)
-                    / self.battery_settings.max_discharge_power_kw
-                    * 100
-                )
-                discharge_rate = min(100, max(0, int(discharge_power_pct)))
-            else:
-                discharge_rate = 0
-
-        elif strategic_intent == "IDLE":
-            grid_charge = False
-            discharge_rate = 0
-
-        else:
-            logger.warning(
-                "Unknown strategic intent: %s, using IDLE defaults", strategic_intent
-            )
-            grid_charge = False
-            discharge_rate = 0
+        control = self._schedule_manager.INTENT_TO_CONTROL[strategic_intent]
+        grid_charge = bool(control["grid_charge"])
+        charge_rate = int(control["charge_rate"])
+        discharge_rate = int(control["discharge_rate"])
 
         hour = period // 4
         logger.info(
-            "Period %d (%02d:%02d): Intent=%s, Action=%.2f kWh (%.2f kW), DischargeRate=%d%%",
+            "Period %d (%02d:%02d): Intent=%s → grid_charge=%s, charge=%d%%, discharge=%d%%",
             period,
             hour,
             (period % 4) * 15,
             strategic_intent,
-            battery_action_kwh,
-            battery_action_kw,
-            discharge_rate,
-        )
-
-        # Apply grid charge setting
-        logger.debug(
-            "HARDWARE: Setting grid charge to %s for period %d",
             grid_charge,
-            period,
-        )
-        self.controller.set_grid_charge(grid_charge)
-
-        # Apply charging power rate (when grid charging is enabled)
-        self.adjust_charging_power()
-
-        # Apply discharge power rate
-        logger.info(
-            "HARDWARE: Setting discharge power rate to %d%% for period %d",
+            charge_rate,
             discharge_rate,
-            period,
         )
+
+        self.controller.set_grid_charge(grid_charge)
+        self.controller.set_charging_power_rate(charge_rate)
         self.controller.set_discharging_power_rate(discharge_rate)
+
+        # Update IDLE state machine in power monitor
+        if self._power_monitor:
+            if strategic_intent == "IDLE":
+                soc = self.controller.get_battery_soc()
+                soe_start_kwh = self.battery_settings.total_capacity * soc / 100.0
+                usable_kwh = (
+                    self.battery_settings.max_soe_kwh - self.battery_settings.min_soe_kwh
+                )
+                deadband_kwh = self.battery_settings.idle_deadband_pct / 100.0 * usable_kwh
+                self._power_monitor.set_idle_context(soe_start_kwh, deadband_kwh)
+            else:
+                self._power_monitor.clear_idle_context()
 
     def _calculate_initial_cost_basis(self, current_period: int) -> float:
         """Calculate marginal cost of battery energy using historical data.

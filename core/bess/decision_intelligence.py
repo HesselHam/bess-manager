@@ -120,6 +120,8 @@ def generate_strategic_pattern_name(
             return "Mixed Export Strategy"
     elif strategic_intent == "LOAD_SUPPORT":
         return "Home Load Support"
+    elif strategic_intent == "HOLD":
+        return "Battery Preservation"
     else:  # IDLE
         if energy_data.solar_production > 0.1 and energy_data.grid_imported < 0.1:
             return "Solar Self-Sufficiency"
@@ -296,6 +298,11 @@ def generate_economic_chain(
                 f"discharge needed → Net value: {immediate_value:+.2f} {c}"
             )
 
+    elif strategic_intent == "HOLD":
+        return (
+            f"Hour {hour:02d}: Battery preserved - solar and grid supply load directly "
+            f"→ Net value: {immediate_value:+.2f} {c}"
+        )
     else:  # IDLE
         return (
             f"Hour {hour:02d}: Optimal idle - no beneficial battery action available "

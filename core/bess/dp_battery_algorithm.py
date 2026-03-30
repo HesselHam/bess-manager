@@ -611,6 +611,15 @@ def _run_dynamic_programming(
                 if mode == "IDLE" and solar_production[t] <= 0.01:
                     continue
 
+                # EXPORT_ARBITRAGE requires enough SOE for at least one full period
+                # at max discharge power. Without this, the DP prefers emptying the
+                # last scraps of battery over decently supporting load.
+                if mode == "EXPORT_ARBITRAGE":
+                    available_soe = soe - battery_settings.min_soe_kwh
+                    min_export_soe = battery_settings.max_discharge_power_kw * dt
+                    if available_soe < min_export_soe:
+                        continue
+
                 battery_charge, battery_discharge, grid_imported, grid_exported, next_soe = (
                     _calculate_mode_energy_flows(
                         mode=mode,

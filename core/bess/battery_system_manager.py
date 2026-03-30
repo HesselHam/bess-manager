@@ -130,6 +130,9 @@ class BatterySystemManager:
         self._current_schedule = None
         self._initial_soe = None
 
+        # BDC transition tracking: None = unknown (forces write on first period)
+        self._bdc_enabled: bool | None = None
+
         # Prediction caches (populated by _fetch_predictions)
         self._consumption_predictions: list[float] | None = None
         self._solar_predictions: list[float] | None = None
@@ -2049,6 +2052,22 @@ class BatterySystemManager:
         self.controller.set_charging_power_rate(charge_rate)
         self.controller.set_discharging_power_rate(discharge_rate)
 
+        # BDC control: write only on transitions to avoid EEPROM wear.
+        # _bdc_enabled=None at startup forces a write on the first period.
+        bdc_should_be_enabled = strategic_intent != "HOLD"
+        if bdc_should_be_enabled != self._bdc_enabled:
+            try:
+                self.controller.set_bdc_state(bdc_should_be_enabled)
+                self._bdc_enabled = bdc_should_be_enabled
+            except Exception:
+                logger.warning(
+                    "BDC state change failed (intent=%s, target bdc_enabled=%s); "
+                    "will retry next period",
+                    strategic_intent,
+                    bdc_should_be_enabled,
+                )
+                # Do not update _bdc_enabled — retry next period
+
         # Update IDLE state machine in power monitor
         if self._power_monitor:
             if strategic_intent == "IDLE":
@@ -2343,6 +2362,42 @@ class BatterySystemManager:
         # Build daily view with current period
         return self.daily_view_builder.build_daily_view(current_period)
 
+    def _check_preemptive_bdc(self) -> None:
+        """Send BDC On one minute before a HOLD→non-HOLD transition.
+
+        Runs every minute. At T-1 minute (minute % 15 == 14), checks whether
+        the current period is HOLD and the next is non-HOLD. If so, sends
+        BDC On early so the battery is ready at the period boundary.
+        """
+        intents = self._schedule_manager.strategic_intents
+        if not intents:
+            return
+
+        now = datetime.now()
+        if now.minute % 15 != 14:
+            return
+
+        current_period = now.hour * 4 + now.minute // 15
+        next_period = current_period + 1
+
+        if current_period >= len(intents) or next_period >= len(intents):
+            return
+
+        if intents[current_period] == "HOLD" and intents[next_period] != "HOLD":
+            if self._bdc_enabled is not True:
+                try:
+                    self.controller.set_bdc_state(True)
+                    self._bdc_enabled = True
+                    logger.info(
+                        "Preemptive BDC On: next period %d is %s",
+                        next_period,
+                        intents[next_period],
+                    )
+                except Exception:
+                    logger.warning(
+                        "Preemptive BDC On failed; will retry at period start"
+                    )
+
     def adjust_charging_power(self) -> None:
         """Adjust charging power based on house consumption."""
         try:
@@ -2354,6 +2409,8 @@ class BatterySystemManager:
             if self._power_monitor:
                 self._power_monitor.update_target_charging_power(charge_rate)
                 self._power_monitor.adjust_battery_charging()
+
+            self._check_preemptive_bdc()
 
         except (AttributeError, ValueError, KeyError) as e:
             logger.error("Failed to adjust charging power: %s", str(e))

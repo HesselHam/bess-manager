@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.24] - 2026-03-30
+
+### Added
+
+- BDC (Battery DC Converter) control during HOLD mode: when `bdc_switch` sensor is configured, `BDC Off` is sent on transition into HOLD to eliminate ~80W battery standby draw. `BDC On` is sent when leaving HOLD. Feature disabled by default (empty sensor key). Writes occur only on transitions to protect Modbus EEPROM from excessive wear.
+- Preemptive BDC On: one minute before a HOLD→non-HOLD transition (detected via `minute % 15 == 14`), `BDC On` is sent early so the battery is ready at the period boundary (~45s startup time).
+
 ## [7.9.23] - 2026-03-29
 
 ### Changed

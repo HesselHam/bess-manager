@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.23"
+version: "7.9.24"
 slug: "bess_manager"
 init: false
 arch:
@@ -83,6 +83,7 @@ options:
     battery_charging_power_rate: "number.rkm0d7n04x_battery_charge_power_limit"
     battery_discharging_power_rate: "number.rkm0d7n04x_battery_discharge_power_limit"
     grid_charge: "switch.rkm0d7n04x_ac_charge"
+    bdc_switch: ""                                                   # BDC switch for HOLD mode power saving (optional, Modbus only)
     # === Real-time Power Sensors (Primary - Live Power Flow) ===
     pv_power: "sensor.rkm0d7n04x_internal_wattage"                    # Total solar DC production
     local_load_power: "sensor.rkm0d7n04x_local_load_power"           # Home consumption
@@ -171,6 +172,7 @@ schema:
     battery_charging_power_rate: str
     battery_discharging_power_rate: str
     grid_charge: str
+    bdc_switch: str?
     current_l1: str
     current_l2: str
     current_l3: str

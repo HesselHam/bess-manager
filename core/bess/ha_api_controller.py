@@ -858,6 +858,30 @@ class HomeAssistantAPIController:
             entity_id=entity_id,
         )
 
+    def set_bdc_state(self, enable: bool) -> None:
+        """Enable or disable the BDC (Battery DC Converter).
+
+        Used to eliminate ~80W battery standby draw during HOLD periods.
+        Only called on HOLD<->non-HOLD transitions to avoid EEPROM wear
+        on the local Modbus RS485 connection.
+
+        Requires 'bdc_switch' to be configured in sensors. If not
+        configured (empty string), this method returns immediately.
+        """
+        entity_id = self.sensors.get("bdc_switch")
+        if not entity_id:
+            return
+
+        option = "BDC On" if enable else "BDC Off"
+        logger.info("%s BDC", "Enabling" if enable else "Disabling")
+
+        self._service_call_with_retry(
+            "select",
+            "select_option",
+            entity_id=entity_id,
+            option=option,
+        )
+
     def grid_charge_enabled(self):
         """Return True if grid charging is enabled."""
         try:

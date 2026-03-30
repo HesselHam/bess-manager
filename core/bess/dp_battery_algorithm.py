@@ -209,14 +209,12 @@ def _calculate_mode_energy_flows(
         grid_exported = max(0.0, solar_surplus - battery_charge)
 
     elif mode == "SOLAR_STORAGE":
-        # Store solar surplus in battery (battery_first); no discharge for load
-        solar_surplus = max(0.0, solar - consumption)
-        battery_charge = min(solar_surplus, max_charge)
+        # battery_first: ALL solar → battery (DC path), ALL load ← grid (AC path)
+        battery_charge = min(solar, max_charge)
         battery_discharge = 0.0
 
-        solar_to_load = min(solar, consumption)
-        grid_imported = max(0.0, consumption - solar_to_load)
-        grid_exported = max(0.0, solar_surplus - battery_charge)
+        grid_imported = consumption
+        grid_exported = max(0.0, solar - battery_charge)
 
     elif mode == "GRID_CHARGING":
         # Charge from grid + solar at max rate (grid_charge=True)
@@ -361,9 +359,14 @@ def _calculate_reward(
     new_cost_basis = cost_basis
 
     if battery_charge > 0.0:
-        solar_available = max(0.0, solar_production - home_consumption)
-        solar_to_battery = min(solar_available, battery_charge)
-        grid_to_battery = max(0.0, battery_charge - solar_to_battery)
+        if mode == "SOLAR_STORAGE":
+            # battery_first: ALL solar goes directly to battery (DC path), no grid to battery
+            solar_to_battery = battery_charge
+            grid_to_battery = 0.0
+        else:
+            solar_available = max(0.0, solar_production - home_consumption)
+            solar_to_battery = min(solar_available, battery_charge)
+            grid_to_battery = max(0.0, battery_charge - solar_to_battery)
 
         grid_energy_cost = grid_to_battery * current_buy_price
         total_new_cost = grid_energy_cost + battery_wear_cost

@@ -5,6 +5,17 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.27] - 2026-03-30
+
+### Fixed
+
+- SOLAR_STORAGE energy flow corrected to match battery_first hardware behavior: all solar goes
+  directly to the battery (DC path) and all home load is supplied from the grid (AC path).
+  Previously only solar surplus (solar − consumption) was stored, making SOLAR_STORAGE behave
+  identically to IDLE without a deadband — causing the DP to undervalue it compared to IDLE.
+- SOLAR_STORAGE cost basis now correctly attributes all battery charging to solar (zero grid
+  component), so discharge profitability checks reflect the true cycle-cost-only cost basis.
+
 ## [7.9.26] - 2026-03-30
 
 ### Changed

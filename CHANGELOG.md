@@ -5,6 +5,12 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.25] - 2026-03-30
+
+### Changed
+
+- IDLE mode: only valid when solar forecast > 0.01 kWh for that period. Without solar, IDLE degrades to slow battery drain with no meaningful benefit over HOLD or LOAD_SUPPORT. This eliminates nightly SOC drift caused by repeated small IDLE discharges.
+
 ## [7.9.24] - 2026-03-30
 
 ### Added

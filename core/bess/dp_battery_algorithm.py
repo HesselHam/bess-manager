@@ -606,6 +606,11 @@ def _run_dynamic_programming(
             best_period_data = None
 
             for mode_idx, mode in enumerate(MODES):
+                # IDLE requires solar: without solar it degrades to slow battery
+                # drain with no meaningful benefit over HOLD or LOAD_SUPPORT.
+                if mode == "IDLE" and solar_production[t] <= 0.01:
+                    continue
+
                 battery_charge, battery_discharge, grid_imported, grid_exported, next_soe = (
                     _calculate_mode_energy_flows(
                         mode=mode,

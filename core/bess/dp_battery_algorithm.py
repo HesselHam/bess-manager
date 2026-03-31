@@ -600,6 +600,8 @@ def _run_dynamic_programming(
             best_next_soe = soe
             best_period_data = None
 
+            mode_values: dict[str, float] = {}
+
             for mode_idx, mode in enumerate(MODES):
                 # IDLE requires solar: without solar it degrades to slow battery
                 # drain with no meaningful benefit over HOLD or LOAD_SUPPORT.
@@ -653,12 +655,32 @@ def _run_dynamic_programming(
 
                 value = reward + V[t + 1, next_i]
 
+                mode_values[mode] = value
+
                 if value > best_value:
                     best_value = value
                     best_mode_idx = mode_idx
                     best_cost_basis = new_cost_basis
                     best_next_soe = next_soe
                     best_period_data = period_data
+
+            # TEMPORARY DEBUG — remove after investigation
+            solar_surplus = max(0.0, solar_production[t] - home_consumption[t])
+            best_mode = MODES[best_mode_idx]
+            soe_pct = soe / battery_settings.max_soe_kwh
+            if (
+                best_mode == "IDLE"
+                and solar_surplus > 0.05
+                and 0.10 <= soe_pct <= 0.30
+            ):
+                idle_val = mode_values.get("IDLE", float("-inf"))
+                ls_val = mode_values.get("LOAD_SUPPORT", float("-inf"))
+                logger.info(
+                    "DP-IDLE-WIN t=%d soe=%.2f(%.0f%%) surplus=%.3f sell=%.4f | "
+                    "IDLE=%.5f LS=%.5f diff=%.5f",
+                    t, soe, soe_pct * 100, solar_surplus, sell_price[t],
+                    idle_val, ls_val, idle_val - ls_val,
+                )
 
             V[t, i] = best_value
             policy[t, i] = best_mode_idx

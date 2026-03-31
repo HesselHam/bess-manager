@@ -2077,12 +2077,9 @@ class BatterySystemManager:
         if self._power_monitor:
             if strategic_intent == "IDLE":
                 soc = self.controller.get_battery_soc()
-                soe_start_kwh = self.battery_settings.total_capacity * soc / 100.0
-                usable_kwh = (
-                    self.battery_settings.max_soe_kwh - self.battery_settings.min_soe_kwh
-                )
-                deadband_kwh = self.battery_settings.idle_deadband_pct / 100.0 * usable_kwh
-                self._power_monitor.set_idle_context(soe_start_kwh, deadband_kwh)
+                goal_soc = int(soc) if soc is not None else int(self.battery_settings.min_soc)
+                deadband_pct = int(self.battery_settings.idle_deadband_pct)
+                self._power_monitor.set_idle_context(goal_soc, deadband_pct)
             else:
                 self._power_monitor.clear_idle_context()
 

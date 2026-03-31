@@ -182,19 +182,11 @@ def _calculate_mode_energy_flows(
         grid_exported = 0.0
 
     elif mode == "IDLE":
-        # Small fluctuations within deadband around current SOE
-        deadband = (battery_settings.idle_deadband_pct / 100.0) * (
-            battery_settings.max_soe_kwh - battery_settings.min_soe_kwh
-        )
-        solar_surplus = max(0.0, solar - consumption)
-        solar_deficit = max(0.0, consumption - solar)
-
-        battery_charge = min(solar_surplus, deadband, max_charge)
-        battery_discharge = min(solar_deficit, deadband, max_discharge)
-
-        solar_to_load = min(solar, consumption)
-        grid_imported = max(0.0, consumption - solar_to_load - battery_discharge)
-        grid_exported = max(0.0, solar_surplus - battery_charge)
+        # Battery passive: solar → load → grid, no battery action
+        battery_charge = 0.0
+        battery_discharge = 0.0
+        grid_imported = max(0.0, consumption - solar)
+        grid_exported = max(0.0, solar - consumption)
 
     elif mode == "LOAD_SUPPORT":
         # Battery discharges to support load; solar surplus charges battery

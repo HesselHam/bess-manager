@@ -66,9 +66,9 @@ class HomePowerMonitor:
         self.target_charging_power_pct = self.battery_settings.charging_power_rate
 
         # IDLE state machine
-        self._idle_soe_start_kwh: float | None = None
-        self._idle_deadband_kwh: float | None = None
-        self._idle_state: str | None = None  # None | "NORMAL" | "CHARGE_BLOCKED" | "DISCHARGE_BLOCKED"
+        self._idle_goal_soc: int | None = None
+        self._idle_deadband_pct: int | None = None
+        self._idle_state: str | None = None  # None | "NORMAL" | "CHARGING"
 
         log_message = (
             "Initialized HomePowerMonitor with:\n"
@@ -215,77 +215,65 @@ class HomePowerMonitor:
         )
         self.controller.set_charging_power_rate(int(target_power))
 
-    def set_idle_context(self, soe_start_kwh: float, deadband_kwh: float) -> None:
-        """Set IDLE state machine baseline for the current 15-min period.
+    def set_idle_context(self, goal_soc: int, deadband_pct: int) -> None:
+        """Set IDLE state machine for the current 15-min period.
 
         Called by _apply_period_schedule when the period intent is IDLE.
-        Resets the state machine to NORMAL with the current SOE as baseline.
+
+        Args:
+            goal_soc: Target SOC% to maintain (integer, e.g. 75)
+            deadband_pct: How many % below goal triggers charging (e.g. 1)
         """
-        self._idle_soe_start_kwh = soe_start_kwh
-        self._idle_deadband_kwh = deadband_kwh
+        self._idle_goal_soc = goal_soc
+        self._idle_deadband_pct = deadband_pct
         self._idle_state = "NORMAL"
         logger.debug(
-            "IDLE context set: soe_start=%.2f kWh, deadband=%.2f kWh",
-            soe_start_kwh,
-            deadband_kwh,
+            "IDLE context set: goal_soc=%d%%, deadband=%d%%",
+            goal_soc,
+            deadband_pct,
         )
 
     def clear_idle_context(self) -> None:
         """Clear IDLE state machine (called when intent is not IDLE)."""
-        self._idle_soe_start_kwh = None
-        self._idle_deadband_kwh = None
+        self._idle_goal_soc = None
+        self._idle_deadband_pct = None
         self._idle_state = None
 
     def _enforce_idle_deadband(self) -> None:
-        """Enforce SOE deadband for IDLE mode.
+        """Enforce SOC maintenance for IDLE mode.
 
-        Runs every minute. State transitions:
-          NORMAL → CHARGE_BLOCKED  when SOE > soe_start + deadband
-          NORMAL → DISCHARGE_BLOCKED when SOE < soe_start - deadband
-          CHARGE_BLOCKED → NORMAL  when SOE ≤ soe_start (hysteresis: back to baseline)
-          DISCHARGE_BLOCKED → NORMAL when SOE ≥ soe_start
+        Runs every minute. Charge rate only — discharge is never touched.
+          NORMAL → CHARGING when soc < goal_soc - deadband_pct → set charge=100%
+          CHARGING → NORMAL when soc >= goal_soc → set charge=0%
         """
         if self._idle_state is None:
             return
 
         soc = self.controller.get_battery_soc()
-        soe_kwh = self.battery_settings.total_capacity * soc / 100.0
-        upper = self._idle_soe_start_kwh + self._idle_deadband_kwh
-        lower = self._idle_soe_start_kwh - self._idle_deadband_kwh
+        if soc is None:
+            return
+
+        soc_int = int(soc)
 
         if self._idle_state == "NORMAL":
-            if soe_kwh > upper:
-                self._idle_state = "CHARGE_BLOCKED"
+            if soc_int < self._idle_goal_soc - self._idle_deadband_pct:
+                self._idle_state = "CHARGING"
                 logger.info(
-                    "IDLE: SOE %.2f kWh exceeded upper deadband %.2f kWh — blocking charge",
-                    soe_kwh,
-                    upper,
+                    "IDLE: SOC %d%% below threshold %d%% — enabling charge",
+                    soc_int,
+                    self._idle_goal_soc - self._idle_deadband_pct,
+                )
+                self.controller.set_charging_power_rate(100)
+
+        elif self._idle_state == "CHARGING":
+            if soc_int >= self._idle_goal_soc:
+                self._idle_state = "NORMAL"
+                logger.info(
+                    "IDLE: SOC %d%% reached goal %d%% — disabling charge",
+                    soc_int,
+                    self._idle_goal_soc,
                 )
                 self.controller.set_charging_power_rate(0)
-            elif soe_kwh < lower:
-                self._idle_state = "DISCHARGE_BLOCKED"
-                logger.info(
-                    "IDLE: SOE %.2f kWh below lower deadband %.2f kWh — blocking discharge",
-                    soe_kwh,
-                    lower,
-                )
-                self.controller.set_discharging_power_rate(0)
-
-        elif self._idle_state == "CHARGE_BLOCKED":
-            if soe_kwh <= self._idle_soe_start_kwh:
-                self._idle_state = "NORMAL"
-                logger.info(
-                    "IDLE: SOE %.2f kWh restored to baseline — charge unblocked", soe_kwh
-                )
-                self.controller.set_charging_power_rate(int(self.target_charging_power_pct))
-
-        elif self._idle_state == "DISCHARGE_BLOCKED":
-            if soe_kwh >= self._idle_soe_start_kwh:
-                self._idle_state = "NORMAL"
-                logger.info(
-                    "IDLE: SOE %.2f kWh restored to baseline — discharge unblocked", soe_kwh
-                )
-                self.controller.set_discharging_power_rate(100)
 
     def update_target_charging_power(self, percentage: float) -> None:
         """Update the target charging power percentage.

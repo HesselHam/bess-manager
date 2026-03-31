@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.31] - 2026-03-31
+
+### Changed
+
+- IDLE mode redesigned: battery is now fully passive (solar → load → grid, no battery action in DP).
+  Hardware runs load_first with charge_rate=0%, discharge_rate=100%. The power monitor only
+  intervenes when SOC drops more than `idle_deadband_pct` below the goal SOC, at which point it
+  sets charge_rate=100% until SOC recovers. Discharge rate is never touched by the power monitor
+  during IDLE.
+
 ## [7.9.30] - 2026-03-31
 
 ### Fixed

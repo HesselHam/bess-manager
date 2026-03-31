@@ -109,7 +109,7 @@ class GrowattScheduleManager:
     # HOLD: charge=0%, discharge=0% — battery fully preserved.
     INTENT_TO_CONTROL: ClassVar[dict[str, dict[str, bool | int]]] = {
         "HOLD": {"grid_charge": False, "charge_rate": 0, "discharge_rate": 0},
-        "IDLE": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
+        "IDLE": {"grid_charge": False, "charge_rate": 0, "discharge_rate": 100},
         "LOAD_SUPPORT": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
         "SOLAR_STORAGE": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
         "GRID_CHARGING": {"grid_charge": True, "charge_rate": 100, "discharge_rate": 100},

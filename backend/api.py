@@ -1607,7 +1607,7 @@ async def get_period_details():
             entry = {
                 "period": period,
                 "time": time_str,
-                "date": today.isoformat(),
+                "date": (period_data.timestamp.date() if period_data.timestamp else today).isoformat(),
                 "dataSource": "actual" if actual and not is_missing else period_data.data_source,
                 "isCurrent": period == current_period,
                 "buyPrice": round(period_data.economic.buy_price, 4),

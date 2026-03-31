@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.29] - 2026-03-31
+
+### Fixed
+
+- Tomorrow's planned periods (96–191 in the 192-period horizon) now appear under a correct
+  date header in the Decision Details table. Previously all periods were assigned today's date,
+  so the frontend date separator never triggered for tomorrow's entries.
+
 ## [7.9.28] - 2026-03-31
 
 ### Fixed

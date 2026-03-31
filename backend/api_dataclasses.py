@@ -98,6 +98,7 @@ class APIBatterySettings:
     efficiencyDischarge: float  # % - discharge efficiency
     estimatedConsumption: float  # kWh - estimated daily consumption
     consumptionStrategy: str  # consumption forecast strategy
+    idleDeadbandPct: float  # % of usable capacity for IDLE mode deadband
 
     @classmethod
     def from_internal(
@@ -119,6 +120,7 @@ class APIBatterySettings:
             efficiencyDischarge=battery.efficiency_discharge,
             estimatedConsumption=estimated_consumption,
             consumptionStrategy=consumption_strategy,
+            idleDeadbandPct=battery.idle_deadband_pct,
         )
 
     def to_internal_update(self) -> dict:

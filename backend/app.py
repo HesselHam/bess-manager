@@ -362,6 +362,7 @@ class BESSController:
                     "minActionProfitThreshold": battery_config[
                         "min_action_profit_threshold"
                     ],
+                    "idleDeadbandPct": battery_config.get("idle_deadband_pct", 2.0),
                 },
                 "home": {
                     "defaultHourly": home_config["consumption"],

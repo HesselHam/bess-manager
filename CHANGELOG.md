@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.28] - 2026-03-31
+
+### Fixed
+
+- `idle_deadband_pct` from config.yaml was never applied to the algorithm — `_apply_settings()`
+  built the battery settings dict without it, so the DP always used the hardcoded default of 2%.
+  Added `idleDeadbandPct` to the settings dict passed to `update_settings()`.
+- `idleDeadbandPct` added to `/api/battery-settings` response so the live value is verifiable
+  without restarting or reading logs.
+
 ## [7.9.27] - 2026-03-30
 
 ### Fixed

@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.30] - 2026-03-31
+
+### Fixed
+
+- DP now always plans a 192-period (48-hour) horizon. When tomorrow's prices are not yet
+  published (typically before ~14:30 for NL Nordpool), today's prices are used as a proxy
+  for tomorrow so the schedule always extends into the next day.
+
 ## [7.9.29] - 2026-03-31
 
 ### Fixed

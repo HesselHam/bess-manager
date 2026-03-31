@@ -877,7 +877,7 @@ class BatterySystemManager:
             else:
                 price_entries = self._price_manager.get_today_prices()
 
-                # Extend with tomorrow's prices when available
+                # Extend with tomorrow's prices; fall back to today's as proxy if unavailable
                 tomorrow_entries = self._price_manager.get_tomorrow_prices()
                 if tomorrow_entries:
                     price_entries = price_entries + tomorrow_entries
@@ -885,6 +885,11 @@ class BatterySystemManager:
                         "Extended price horizon with %d tomorrow entries (total: %d)",
                         len(tomorrow_entries),
                         len(price_entries),
+                    )
+                else:
+                    price_entries = price_entries + price_entries
+                    logger.info(
+                        "Tomorrow prices not yet available — using today's prices as proxy for 192-period horizon"
                     )
 
             if not price_entries:

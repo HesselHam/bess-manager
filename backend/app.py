@@ -363,6 +363,8 @@ class BESSController:
                         "min_action_profit_threshold"
                     ],
                     "idleDeadbandPct": battery_config.get("idle_deadband_pct", 2.0),
+                    "gridChargeMaxSolarThresholdKwh": battery_config.get("grid_charge_max_solar_threshold_kwh", 0.1),
+                    "gridChargeMinHeadroomKwh": battery_config.get("grid_charge_min_headroom_kwh", 0.9),
                     "idleEnabled": battery_config.get("idle_enabled", True),
                 },
                 "home": {

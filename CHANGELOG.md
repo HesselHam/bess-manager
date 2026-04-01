@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.43] - 2026-04-02
+
+### Fixed
+
+- `grid_charge_max_solar_threshold_kwh` and `grid_charge_min_headroom_kwh` were not
+  forwarded to `BatterySettings` via `_apply_settings`, so config changes had no effect
+  and DP guards always used hardcoded defaults (0.1 and 0.9).
+
 ## [7.9.42] - 2026-04-02
 
 ### Fixed

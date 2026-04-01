@@ -617,7 +617,7 @@ def _run_dynamic_programming(
                 if mode == "GRID_CHARGING":
                     if solar_production[t] > battery_settings.grid_charge_max_solar_threshold_kwh:
                         continue
-                    available_space = (battery_settings.max_soe_kwh - soe) / eff_c
+                    available_space = (battery_settings.max_soe_kwh - soe) / battery_settings.efficiency_charge
                     if available_space < battery_settings.grid_charge_min_headroom_kwh:
                         continue
 

@@ -605,21 +605,10 @@ def _run_dynamic_programming(
             best_next_soe = soe
             best_period_data = None
 
-            solar_surplus = max(0.0, solar_production[t] - home_consumption[t])
-
             for mode_idx, mode in enumerate(MODES):
                 # IDLE requires solar: without solar it degrades to slow battery
                 # drain with no meaningful benefit over HOLD or LOAD_SUPPORT.
                 if mode == "IDLE" and solar_production[t] <= 0.01:
-                    continue
-
-                # IDLE during solar surplus causes a convergence cascade: the DP's
-                # optimal policy from the higher SOE state exports future surplus
-                # (IDLE) rather than charging, collapsing V[i+Δ] − V[i] to the
-                # opportunity-swap value instead of the full discharge value.
-                # Blocking IDLE when surplus is available forces LOAD_SUPPORT,
-                # which breaks the cascade and correctly values stored solar.
-                if mode == "IDLE" and solar_surplus > 0.05:
                     continue
 
                 # GRID_CHARGING is blocked when solar production exceeds the threshold

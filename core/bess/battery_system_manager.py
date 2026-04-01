@@ -1247,40 +1247,20 @@ class BatterySystemManager:
         return optimization_period, optimization_data
 
     def _calculate_terminal_value(
-        self, buy_prices: list[float], optimization_period: int
+        self, buy_prices: list[float]
     ) -> float:
         """Calculate terminal value per kWh for the DP optimization.
 
-        When the horizon already extends past today (i.e. tomorrow's prices are
-        included), return 0.0 since the DP has explicit future data. Otherwise,
-        estimate value from the median buy price adjusted for efficiency
-        and cycle cost.
-
-        Using the median avoids inflating the terminal value with peak prices.
+        Estimates the value of energy remaining at the end of the horizon using
+        the median buy price adjusted for efficiency and cycle cost. The median
+        is used to avoid inflating the terminal value with peak price outliers.
 
         Args:
-            buy_prices: Full buy price array (from optimization_period onwards)
-            optimization_period: Current optimization starting period
+            buy_prices: Full buy price array for the optimization horizon
 
         Returns:
             Terminal value per kWh (floored at 0.0)
         """
-        today_period_count = get_period_count(
-            datetime.now(tz=time_utils.TIMEZONE).date()
-        )
-        remaining_today = today_period_count - optimization_period
-        total_horizon = len(buy_prices)
-
-        # If horizon extends past today, DP has explicit tomorrow data
-        if total_horizon > remaining_today:
-            logger.info(
-                "Horizon extends past today (%d > %d remaining), terminal value = 0.0",
-                total_horizon,
-                remaining_today,
-            )
-            return 0.0
-
-        # Estimate terminal value using median (resistant to peak price outliers)
         if not buy_prices:
             return 0.0
 
@@ -1415,9 +1395,7 @@ class BatterySystemManager:
             sell_prices = [entry["sellPrice"] for entry in remaining_entries]
 
             # Calculate terminal value for end-of-horizon energy valuation
-            terminal_value = self._calculate_terminal_value(
-                buy_prices, optimization_period
-            )
+            terminal_value = self._calculate_terminal_value(buy_prices)
 
             # Get temperature-based charge power limits if derating is enabled.
             # The returned list is already sized for n_periods (the remaining horizon).

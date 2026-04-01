@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.38] - 2026-04-01
+
+### Fixed
+
+- Terminal value now always calculated from median buy price, regardless of horizon length.
+  Previously returned 0.0 when horizon extended past today, causing the DP to drain the
+  battery to minimum SOC by end of horizon. Now correctly values remaining energy at
+  end of 192-period horizon.
+
 ## [7.9.37] - 2026-04-01
 
 ### Fixed

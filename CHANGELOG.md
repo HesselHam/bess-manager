@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.41] - 2026-04-02
+
+### Added
+
+- `idle_enabled` config option under `battery`: set to `false` to exclude IDLE from DP
+  mode selection entirely. Default `true` preserves existing behaviour.
+
 ## [7.9.40] - 2026-04-01
 
 ### Fixed

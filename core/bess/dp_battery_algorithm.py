@@ -606,6 +606,10 @@ def _run_dynamic_programming(
             best_period_data = None
 
             for mode_idx, mode in enumerate(MODES):
+                # IDLE can be disabled entirely via config (idle_enabled: false).
+                if mode == "IDLE" and not battery_settings.idle_enabled:
+                    continue
+
                 # IDLE requires solar: without solar it degrades to slow battery
                 # drain with no meaningful benefit over HOLD or LOAD_SUPPORT.
                 if mode == "IDLE" and solar_production[t] <= 0.01:

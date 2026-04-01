@@ -125,6 +125,7 @@ class BatterySettings:
     idle_deadband_pct: float = BATTERY_IDLE_DEADBAND_PCT
     grid_charge_max_solar_threshold_kwh: float = 0.1
     grid_charge_min_headroom_kwh: float = 0.9
+    idle_enabled: bool = True
     reserved_capacity: float = field(init=False)
     min_soe_kwh: float = field(init=False)
     max_soe_kwh: float = field(init=False)
@@ -174,6 +175,7 @@ class BatterySettings:
             self.grid_charge_min_headroom_kwh = battery_config.get(
                 "grid_charge_min_headroom_kwh", 0.9
             )
+            self.idle_enabled = battery_config.get("idle_enabled", True)
             self.__post_init__()
         return self
 

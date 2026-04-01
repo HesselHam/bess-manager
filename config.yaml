@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.40"
+version: "7.9.41"
 slug: "bess_manager"
 init: false
 arch:
@@ -47,6 +47,7 @@ options:
     idle_deadband_pct: 2             # IDLE mode: max SOE deviation as % of usable capacity (default 2%)
     grid_charge_max_solar_threshold_kwh: 0.1  # Grid charge blocked when solar exceeds this per period (kWh)
     grid_charge_min_headroom_kwh: 0.9         # Minimum free battery space required for grid charge (kWh)
+    idle_enabled: true                        # Include IDLE as a DP mode option (true) or exclude it (false)
     temperature_derating:
       enabled: false  # Enable for outdoor batteries affected by cold weather
       weather_entity: ""  # HA weather entity for forecast (e.g. "weather.forecast_home")
@@ -145,6 +146,7 @@ schema:
     idle_deadband_pct: float?
     grid_charge_max_solar_threshold_kwh: float?
     grid_charge_min_headroom_kwh: float?
+    idle_enabled: bool?
     temperature_derating:
       enabled: bool?
       weather_entity: str?

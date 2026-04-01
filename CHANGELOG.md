@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.40] - 2026-04-01
+
+### Fixed
+
+- Buffer day trim now strips exactly 96 periods from the end of the optimization result
+  instead of capping at 192. Mid-day optimization runs produce fewer than 3×96 periods
+  (e.g. 205 at period 83), so the old `min(192, ...)` cap left buffer periods in the
+  result and caused `Period index 192 beyond tomorrow` errors.
+
 ## [7.9.39] - 2026-04-01
 
 ### Changed

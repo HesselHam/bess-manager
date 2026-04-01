@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.39"
+version: "7.9.40"
 slug: "bess_manager"
 init: false
 arch:

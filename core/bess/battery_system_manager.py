@@ -1423,11 +1423,11 @@ class BatterySystemManager:
                 max_charge_power_per_period=max_charge_power_per_period,
             )
 
-            # Trim buffer day from result — only today + tomorrow (192 periods max) are
-            # shown in the UI and applied to the schedule. The third day was added purely
-            # to give the DP a real future horizon and prevent end-of-day battery drain.
-            max_result_periods = min(192, len(result.period_data))
-            result.period_data = result.period_data[:max_result_periods]
+            # Trim buffer day from result — always strip the last 96 periods (one buffer day).
+            # The buffer day was added purely to give the DP a real future horizon and prevent
+            # end-of-day battery drain. When optimizing mid-day, result has fewer than 3×96
+            # periods (e.g. 205 at period 83), so len-96 gives the correct trim regardless.
+            result.period_data = result.period_data[:max(0, len(result.period_data) - 96)]
 
             # Add timestamps to period data (algorithm is time-agnostic, operates on relative indices)
             self._add_timestamps_to_period_data(result, optimization_period)

@@ -5,6 +5,34 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.34] - 2026-04-01
+
+### Fixed
+
+- DP state space discretisation now uses `linspace` instead of `arange`, guaranteeing exact
+  `min_soe` and `max_soe` endpoints. Previously, floating-point overshoot in `arange` produced
+  an extra SOE level above `max_soe` (e.g. 7.55 kWh on a 7.5 kWh battery = 100.7%), causing
+  spurious small battery actions in periods immediately after a full charge.
+
+## [7.9.33] - 2026-03-31
+
+### Fixed
+
+- DP no longer selects IDLE during solar surplus. When solar exceeds consumption by more than
+  0.05 kWh per period, IDLE is excluded from the mode set and LOAD_SUPPORT is forced instead.
+  Root cause: backward induction caused a convergence cascade — the optimal policy from the
+  higher SOE state would also export future surplus (IDLE), collapsing the value difference
+  between states to the opportunity-swap value (~0.04) rather than the full future discharge
+  value (~0.07). Result was solar being exported at ~0.13 EUR/kWh instead of stored for
+  discharge at 0.26+ EUR/kWh. Also removes the temporary DP-IDLE-WIN debug logging added in v7.9.32.
+
+## [7.9.32] - 2026-03-31
+
+### Added
+
+- Temporary DP-IDLE-WIN debug logging to investigate IDLE mode selection during solar surplus
+  (removed in v7.9.33).
+
 ## [7.9.31] - 2026-03-31
 
 ### Changed

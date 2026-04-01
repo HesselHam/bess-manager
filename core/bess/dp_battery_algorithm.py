@@ -126,11 +126,16 @@ class StrategicIntent(Enum):
 
 
 def _discretize_state_space(battery_settings: BatterySettings) -> np.ndarray:
-    """Return discretized SOE levels for DP state space."""
-    return np.arange(
-        battery_settings.min_soe_kwh,
-        battery_settings.max_soe_kwh + SOE_STEP_KWH,
-        SOE_STEP_KWH,
+    """Return discretized SOE levels for DP state space.
+
+    Uses linspace instead of arange to guarantee exact min/max endpoints,
+    avoiding floating-point overshoot (e.g. 7.55 kWh on a 7.5 kWh battery)
+    that caused SOE > max_soe states and incorrect battery actions.
+    """
+    n = round((battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
+    return np.round(
+        np.linspace(battery_settings.min_soe_kwh, battery_settings.max_soe_kwh, n + 1),
+        decimals=6,
     )
 
 
@@ -600,12 +605,21 @@ def _run_dynamic_programming(
             best_next_soe = soe
             best_period_data = None
 
-            mode_values: dict[str, float] = {}
+            solar_surplus = max(0.0, solar_production[t] - home_consumption[t])
 
             for mode_idx, mode in enumerate(MODES):
                 # IDLE requires solar: without solar it degrades to slow battery
                 # drain with no meaningful benefit over HOLD or LOAD_SUPPORT.
                 if mode == "IDLE" and solar_production[t] <= 0.01:
+                    continue
+
+                # IDLE during solar surplus causes a convergence cascade: the DP's
+                # optimal policy from the higher SOE state exports future surplus
+                # (IDLE) rather than charging, collapsing V[i+Δ] − V[i] to the
+                # opportunity-swap value instead of the full discharge value.
+                # Blocking IDLE when surplus is available forces LOAD_SUPPORT,
+                # which breaks the cascade and correctly values stored solar.
+                if mode == "IDLE" and solar_surplus > 0.05:
                     continue
 
                 # EXPORT_ARBITRAGE requires enough SOE for at least one full period
@@ -655,32 +669,12 @@ def _run_dynamic_programming(
 
                 value = reward + V[t + 1, next_i]
 
-                mode_values[mode] = value
-
                 if value > best_value:
                     best_value = value
                     best_mode_idx = mode_idx
                     best_cost_basis = new_cost_basis
                     best_next_soe = next_soe
                     best_period_data = period_data
-
-            # TEMPORARY DEBUG — remove after investigation
-            solar_surplus = max(0.0, solar_production[t] - home_consumption[t])
-            best_mode = MODES[best_mode_idx]
-            soe_pct = soe / battery_settings.max_soe_kwh
-            if (
-                best_mode == "IDLE"
-                and solar_surplus > 0.05
-                and 0.10 <= soe_pct <= 0.30
-            ):
-                idle_val = mode_values.get("IDLE", float("-inf"))
-                ls_val = mode_values.get("LOAD_SUPPORT", float("-inf"))
-                logger.info(
-                    "DP-IDLE-WIN t=%d soe=%.2f(%.0f%%) surplus=%.3f sell=%.4f | "
-                    "IDLE=%.5f LS=%.5f diff=%.5f",
-                    t, soe, soe_pct * 100, solar_surplus, sell_price[t],
-                    idle_val, ls_val, idle_val - ls_val,
-                )
 
             V[t, i] = best_value
             policy[t, i] = best_mode_idx

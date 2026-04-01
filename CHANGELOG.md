@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.35] - 2026-04-01
+
+### Added
+
+- Two new battery config settings to control GRID_CHARGING behaviour:
+  `grid_charge_max_solar_threshold_kwh` (default 0.1 kWh) blocks grid charge when solar
+  production exceeds the threshold — solar alone can charge the battery.
+  `grid_charge_min_headroom_kwh` (default 0.9 kWh) blocks grid charge when available
+  battery space is less than this value — no room for a meaningful charge action.
+
 ## [7.9.34] - 2026-04-01
 
 ### Fixed

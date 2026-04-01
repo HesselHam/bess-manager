@@ -622,6 +622,16 @@ def _run_dynamic_programming(
                 if mode == "IDLE" and solar_surplus > 0.05:
                     continue
 
+                # GRID_CHARGING is blocked when solar production exceeds the threshold
+                # (solar alone can charge the battery) or when there is insufficient
+                # headroom for a meaningful charge action.
+                if mode == "GRID_CHARGING":
+                    if solar_production[t] > battery_settings.grid_charge_max_solar_threshold_kwh:
+                        continue
+                    available_space = (battery_settings.max_soe_kwh - soe) / eff_c
+                    if available_space < battery_settings.grid_charge_min_headroom_kwh:
+                        continue
+
                 # EXPORT_ARBITRAGE requires enough SOE for at least one full period
                 # at max discharge power. Without this, the DP prefers emptying the
                 # last scraps of battery over decently supporting load.

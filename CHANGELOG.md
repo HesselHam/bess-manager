@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.42] - 2026-04-02
+
+### Fixed
+
+- `idle_enabled` config option was not passed through `_apply_settings` to `BatterySettings`,
+  so toggling it in the add-on UI had no effect. Now correctly forwarded as `idleEnabled`.
+
 ## [7.9.41] - 2026-04-02
 
 ### Added

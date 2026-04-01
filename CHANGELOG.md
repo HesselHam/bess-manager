@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.39] - 2026-04-01
+
+### Changed
+
+- DP horizon extended to 3 days (288 periods): a third buffer day (proxy = tomorrow's
+  prices, consumption, and solar) is added so the DP has a real future beyond day 2.
+  This prevents end-of-horizon battery drain to minimum SOC. The buffer day is never
+  shown in the UI or applied to the schedule — result is trimmed to 192 periods after
+  optimization. Terminal value reverted to 0.0 (buffer makes it redundant).
+
 ## [7.9.38] - 2026-04-01
 
 ### Fixed

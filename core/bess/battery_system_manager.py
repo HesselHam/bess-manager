@@ -892,14 +892,25 @@ class BatterySystemManager:
                         "Tomorrow prices not yet available — using today's prices as proxy for 192-period horizon"
                     )
 
+                # Add a third buffer day (proxy = tomorrow or today) so the DP has a real
+                # future beyond day 2. Buffer periods are never shown in the UI or applied
+                # to the schedule — result.period_data is capped at 192 after optimization.
+                buffer_entries = tomorrow_entries if tomorrow_entries else price_entries[:96]
+                price_entries = price_entries + buffer_entries
+                logger.info(
+                    "Added %d buffer periods (day 3 proxy) for DP horizon (total: %d)",
+                    len(buffer_entries),
+                    len(price_entries),
+                )
+
             if not price_entries:
                 logger.warning("No prices available")
                 return None, None
 
-            # Cap at 192 periods (2 days maximum)
-            if len(price_entries) > 192:
-                price_entries = price_entries[:192]
-                logger.info("Capped price entries at 192 periods (2 days)")
+            # Cap at 288 periods (3 days maximum)
+            if len(price_entries) > 288:
+                price_entries = price_entries[:288]
+                logger.info("Capped price entries at 288 periods (3 days)")
 
             prices = [entry["price"] for entry in price_entries]
 
@@ -1173,6 +1184,22 @@ class BatterySystemManager:
                     )
                 predictions_solar = predictions_solar + tomorrow_solar
 
+            # Add third buffer day (proxy = tomorrow) for DP horizon extension.
+            # Matches the third buffer day added in _get_price_data().
+            if period_count > len(predictions_consumption):
+                predictions_consumption = predictions_consumption + predictions_consumption[-96:]
+                logger.info(
+                    "Added 96 buffer consumption periods (day 3 proxy, total: %d)",
+                    len(predictions_consumption),
+                )
+
+            if period_count > len(predictions_solar):
+                predictions_solar = predictions_solar + predictions_solar[-96:]
+                logger.info(
+                    "Added 96 buffer solar periods (day 3 proxy, total: %d)",
+                    len(predictions_solar),
+                )
+
             # Track running SOC for proper progression
             running_soe = current_soe
 
@@ -1246,39 +1273,17 @@ class BatterySystemManager:
 
         return optimization_period, optimization_data
 
-    def _calculate_terminal_value(
-        self, buy_prices: list[float]
-    ) -> float:
+    def _calculate_terminal_value(self) -> float:
         """Calculate terminal value per kWh for the DP optimization.
 
-        Estimates the value of energy remaining at the end of the horizon using
-        the median buy price adjusted for efficiency and cycle cost. The median
-        is used to avoid inflating the terminal value with peak price outliers.
-
-        Args:
-            buy_prices: Full buy price array for the optimization horizon
+        Always returns 0.0 — the DP horizon is extended with a third buffer day
+        so the algorithm has a real future beyond day 2. No explicit terminal
+        value is needed.
 
         Returns:
-            Terminal value per kWh (floored at 0.0)
+            0.0
         """
-        if not buy_prices:
-            return 0.0
-
-        median_price = statistics.median(buy_prices)
-        terminal_value = (
-            median_price * self.battery_settings.efficiency_discharge
-            - self.battery_settings.cycle_cost_per_kwh
-        )
-        terminal_value = max(0.0, terminal_value)
-
-        logger.info(
-            "Terminal value: %.3f/kWh (median_price=%.3f, efficiency=%.2f, cycle_cost=%.3f)",
-            terminal_value,
-            median_price,
-            self.battery_settings.efficiency_discharge,
-            self.battery_settings.cycle_cost_per_kwh,
-        )
-        return terminal_value
+        return 0.0
 
     def _get_temperature_derated_charge_limits(
         self, num_periods: int
@@ -1395,7 +1400,7 @@ class BatterySystemManager:
             sell_prices = [entry["sellPrice"] for entry in remaining_entries]
 
             # Calculate terminal value for end-of-horizon energy valuation
-            terminal_value = self._calculate_terminal_value(buy_prices)
+            terminal_value = self._calculate_terminal_value()
 
             # Get temperature-based charge power limits if derating is enabled.
             # The returned list is already sized for n_periods (the remaining horizon).
@@ -1417,6 +1422,12 @@ class BatterySystemManager:
                 currency=self.home_settings.currency,
                 max_charge_power_per_period=max_charge_power_per_period,
             )
+
+            # Trim buffer day from result — only today + tomorrow (192 periods max) are
+            # shown in the UI and applied to the schedule. The third day was added purely
+            # to give the DP a real future horizon and prevent end-of-day battery drain.
+            max_result_periods = min(192, len(result.period_data))
+            result.period_data = result.period_data[:max_result_periods]
 
             # Add timestamps to period data (algorithm is time-agnostic, operates on relative indices)
             self._add_timestamps_to_period_data(result, optimization_period)

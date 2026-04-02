@@ -606,6 +606,11 @@ def _run_dynamic_programming(
             best_period_data = None
 
             for mode_idx, mode in enumerate(MODES):
+                # HOLD wastes all solar production (solar → grid at 0 revenue in HOLD).
+                # Block HOLD when solar is present so the DP can use it productively.
+                if mode == "HOLD" and solar_production[t] > 0.01:
+                    continue
+
                 # IDLE can be disabled entirely via config (idle_enabled: false).
                 if mode == "IDLE" and not battery_settings.idle_enabled:
                     continue

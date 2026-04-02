@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.44] - 2026-04-02
+
+### Added
+
+- HOLD is now blocked by the DP when solar is present (`> 0.01 kWh`). HOLD wastes all
+  solar production, so the DP will now prefer IDLE, LOAD_SUPPORT, or SOLAR_STORAGE instead.
+
 ## [7.9.43] - 2026-04-02
 
 ### Fixed

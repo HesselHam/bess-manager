@@ -1550,6 +1550,8 @@ async def get_period_details():
                 "actualHourlySavings": round(actual.economic.hourly_savings, 4) if not is_missing else None,
                 "actualChargeRate": round(actual_charge_rate, 1) if actual_charge_rate is not None else None,
                 "actualDischargeRate": round(actual_discharge_rate, 1) if actual_discharge_rate is not None else None,
+                "dpReward": round(planned.decision.dp_reward, 4) if planned is not None else None,
+                "dpValue": round(planned.decision.dp_value, 4) if planned is not None else None,
             }
 
         periods = []
@@ -1649,6 +1651,8 @@ async def get_period_details():
                 "actualHourlySavings": round(actual.economic.hourly_savings, 4) if actual and not is_missing else None,
                 "actualChargeRate": round(actual_charge_rate, 1) if actual_charge_rate is not None else None,
                 "actualDischargeRate": round(actual_discharge_rate, 1) if actual_discharge_rate is not None else None,
+                "dpReward": round(period_data.decision.dp_reward, 4),
+                "dpValue": round(period_data.decision.dp_value, 4),
             }
             periods.append(entry)
 

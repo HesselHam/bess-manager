@@ -293,6 +293,10 @@ class DecisionData:
     future_value: float = 0.0  # Future economic value
     net_strategy_value: float = 0.0  # Net strategic value
 
+    # DP diagnostics: raw optimization values for inspection
+    dp_reward: float = 0.0  # Per-period reward for chosen action (= immediate + future value)
+    dp_value: float = 0.0  # DP value function V[t,i] = dp_reward + V[t+1, next_i]
+
     # Simple enhanced fields that we can actually implement
     advanced_flow_pattern: str = (
         ""  # Detailed flow pattern (e.g., SOLAR_TO_HOME_AND_BATTERY)

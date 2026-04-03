@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.46] - 2026-04-03
+
+### Added
+
+- Decision Details table: two new DP diagnostic columns **Reward** and **V[t,i]**.
+  Reward = per-period DP reward for the chosen action (`-(grid_import×inkoop − grid_export×verkoop + wear)`).
+  V[t,i] = value function = reward + V[t+1, next_i], the total expected value from this state onward.
+  Both values are taken from the planned DP optimization result. Shown in indigo; reward is
+  red when negative.
+
 ## [7.9.45] - 2026-04-03
 
 ### Added

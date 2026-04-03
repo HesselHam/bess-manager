@@ -600,6 +600,7 @@ def _run_dynamic_programming(
 
         for i, soe in enumerate(soe_levels):
             best_value = float("-inf")
+            best_reward = float("-inf")
             best_mode_idx = 0  # default: HOLD
             best_cost_basis = C[t, i]
             best_next_soe = soe
@@ -679,6 +680,7 @@ def _run_dynamic_programming(
 
                 if value > best_value:
                     best_value = value
+                    best_reward = reward
                     best_mode_idx = mode_idx
                     best_cost_basis = new_cost_basis
                     best_next_soe = next_soe
@@ -687,6 +689,9 @@ def _run_dynamic_programming(
             V[t, i] = best_value
             policy[t, i] = best_mode_idx
             stored_period_data[(t, i)] = best_period_data
+            if best_period_data is not None:
+                best_period_data.decision.dp_reward = best_reward
+                best_period_data.decision.dp_value = best_value
 
             # Propagate cost basis to next period
             if t + 1 < horizon:

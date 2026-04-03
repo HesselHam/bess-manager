@@ -128,6 +128,8 @@ interface PeriodDetail {
   actualHourlySavings: number | null;
   actualChargeRate: number | null;
   actualDischargeRate: number | null;
+  dpReward: number | null;
+  dpValue: number | null;
 }
 
 interface PeriodDetailsResponse {
@@ -985,6 +987,9 @@ const InverterStatusDashboard: React.FC = () => {
                       <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Kosten</th>
                       <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Baseline</th>
                       <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Besparing</th>
+                      {/* DP diagnostics */}
+                      <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP reward voor gekozen actie: -(grid_import×inkoop − grid_export×verkoop + wear)">Reward</th>
+                      <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP waarde functie V[t,i] = reward + V[t+1, next_i]">V[t,i]</th>
                     </tr>
                     <tr className="text-gray-400 dark:text-gray-500">
                       <td className="px-2 pb-1"></td>
@@ -1007,6 +1012,8 @@ const InverterStatusDashboard: React.FC = () => {
                       <td className="px-2 pb-1 text-right">plan/act {periodDetails?.currency ?? 'SEK'}</td>
                       <td className="px-2 pb-1 text-right">plan/act {periodDetails?.currency ?? 'SEK'}</td>
                       <td className="px-2 pb-1 text-right">plan/act {periodDetails?.currency ?? 'SEK'}</td>
+                      <td className="px-2 pb-1 text-right">{periodDetails?.currency ?? 'SEK'}</td>
+                      <td className="px-2 pb-1 text-right">{periodDetails?.currency ?? 'SEK'}</td>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
@@ -1020,7 +1027,7 @@ const InverterStatusDashboard: React.FC = () => {
                           lastDate = p.date;
                           rows.push(
                             <tr key={`date-${p.date}`} className="bg-gray-100 dark:bg-gray-700/60">
-                              <td colSpan={21} className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              <td colSpan={23} className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
                                 {p.date}
                               </td>
                             </tr>
@@ -1096,6 +1103,13 @@ const InverterStatusDashboard: React.FC = () => {
                             <td className="px-2 py-1 text-right font-mono text-gray-400">{fmtCostDual(p.gridOnlyCost, p.actualGridOnlyCost)}</td>
                             <td className={`px-2 py-1 text-right font-mono font-semibold ${p.hourlySavings > 0 ? 'text-green-700 dark:text-green-400' : p.hourlySavings < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
                               {fmtCostDual(p.hourlySavings, p.actualHourlySavings)}
+                            </td>
+                            {/* DP diagnostics */}
+                            <td className={`px-2 py-1 text-right font-mono ${p.dpReward != null && p.dpReward > 0 ? 'text-indigo-700 dark:text-indigo-400' : p.dpReward != null && p.dpReward < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
+                              {p.dpReward != null ? p.dpReward.toFixed(4) : '—'}
+                            </td>
+                            <td className="px-2 py-1 text-right font-mono text-indigo-600 dark:text-indigo-400">
+                              {p.dpValue != null ? p.dpValue.toFixed(4) : '—'}
                             </td>
                           </tr>
                         );

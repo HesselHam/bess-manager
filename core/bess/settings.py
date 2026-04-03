@@ -126,6 +126,8 @@ class BatterySettings:
     grid_charge_max_solar_threshold_kwh: float = 0.1
     grid_charge_min_headroom_kwh: float = 0.9
     idle_enabled: bool = True
+    modbus_tou_control: bool = False
+    modbus_tou_entity_prefix: str = ""
     reserved_capacity: float = field(init=False)
     min_soe_kwh: float = field(init=False)
     max_soe_kwh: float = field(init=False)
@@ -176,6 +178,8 @@ class BatterySettings:
                 "grid_charge_min_headroom_kwh", 0.9
             )
             self.idle_enabled = battery_config.get("idle_enabled", True)
+            self.modbus_tou_control = battery_config.get("modbus_tou_control", False)
+            self.modbus_tou_entity_prefix = battery_config.get("modbus_tou_entity_prefix", "")
             self.__post_init__()
         return self
 

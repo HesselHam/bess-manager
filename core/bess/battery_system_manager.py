@@ -1947,17 +1947,7 @@ class BatterySystemManager:
                                 segment["end_time"],
                                 segment["batt_mode"],
                             )
-                            # Filter parameters to only include what the method accepts
-                            inverter_params = {
-                                "segment_id": segment["segment_id"],
-                                "batt_mode": segment["batt_mode"],
-                                "start_time": segment["start_time"],
-                                "end_time": segment["end_time"],
-                                "enabled": segment["enabled"],
-                            }
-                            self._controller.set_inverter_time_segment(
-                                **inverter_params
-                            )
+                            self._write_tou_segment(segment)
                             logger.debug("SUCCESS: Segment disabled")
                         except Exception as e:
                             logger.error("FAILED: Failed to disable TOU segment: %s", e)
@@ -1972,17 +1962,7 @@ class BatterySystemManager:
                                 segment["end_time"],
                                 segment["batt_mode"],
                             )
-                            # Filter parameters to only include what the method accepts
-                            inverter_params = {
-                                "segment_id": segment["segment_id"],
-                                "batt_mode": segment["batt_mode"],
-                                "start_time": segment["start_time"],
-                                "end_time": segment["end_time"],
-                                "enabled": segment["enabled"],
-                            }
-                            self._controller.set_inverter_time_segment(
-                                **inverter_params
-                            )
+                            self._write_tou_segment(segment)
                             logger.debug("SUCCESS: Segment updated")
                         except Exception as e:
                             logger.error("FAILED: Failed to update TOU segment: %s", e)
@@ -2008,6 +1988,29 @@ class BatterySystemManager:
         except Exception as e:
             logger.error("Failed to apply schedule: %s", e)
             raise
+
+    def _write_tou_segment(self, segment: dict) -> None:
+        """Write a single TOU segment via Modbus (with cloud API fallback)."""
+        inverter_params = {
+            "segment_id": segment["segment_id"],
+            "batt_mode": segment["batt_mode"],
+            "start_time": segment["start_time"],
+            "end_time": segment["end_time"],
+            "enabled": segment["enabled"],
+        }
+        if self.battery_settings.modbus_tou_control and self.battery_settings.modbus_tou_entity_prefix:
+            try:
+                self._controller.set_inverter_time_segment_modbus(
+                    entity_prefix=self.battery_settings.modbus_tou_entity_prefix,
+                    **inverter_params,
+                )
+                return
+            except Exception as e:
+                logger.warning(
+                    "Modbus TOU write failed for segment %d, falling back to cloud API: %s",
+                    segment["segment_id"], e,
+                )
+        self._controller.set_inverter_time_segment(**inverter_params)
 
     def _apply_period_schedule(self, period: int) -> None:
         """Apply period settings by directly setting all inverter controls from plan.

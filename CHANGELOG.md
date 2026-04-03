@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.45] - 2026-04-03
+
+### Added
+
+- Optional Modbus TOU control via SolaX Modbus integration. Set `modbus_tou_control: true`
+  and `modbus_tou_entity_prefix` in config to write TOU segments via local Modbus instead
+  of the Growatt cloud API. Eliminates ~1.5 minute cloud roundtrip delay. Cloud API remains
+  as automatic fallback if Modbus write fails. Write order and diff logic unchanged.
+
 ## [7.9.44] - 2026-04-02
 
 ### Added

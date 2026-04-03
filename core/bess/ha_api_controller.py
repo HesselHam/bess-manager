@@ -942,6 +942,65 @@ class HomeAssistantAPIController:
             **service_params,
         )
 
+    def set_inverter_time_segment_modbus(
+        self,
+        entity_prefix: str,
+        segment_id: int,
+        batt_mode: str,
+        start_time: str,
+        end_time: str,
+        enabled: bool,
+    ) -> None:
+        """Set inverter time segment via local Modbus (SolaX integration entities).
+
+        Writes all four select entities then presses the update button to commit
+        the values to the inverter in a single Modbus transaction. Faster than
+        the cloud API path (no Growatt server roundtrip).
+
+        Args:
+            entity_prefix: SolaX entity prefix, e.g. "growatt_modbus_min3600tlxh"
+            segment_id: Segment number (1-9)
+            batt_mode: Battery mode ("load_first", "battery_first", or "grid_first")
+            start_time: Start time in "HH:MM" format
+            end_time: End time in "HH:MM" format
+            enabled: Whether the segment is enabled
+        """
+        mode_map = {
+            "load_first": "Load First",
+            "battery_first": "Battery First",
+            "grid_first": "Grid First",
+        }
+        mode_option = mode_map[batt_mode]
+        active_option = "Enabled" if enabled else "Disabled"
+        base = f"{entity_prefix}_time_{segment_id}"
+        enabled_str = "enabled" if enabled else "disabled"
+
+        logger.info(
+            "Modbus TOU segment %d: %s %s-%s (%s)",
+            segment_id, batt_mode, start_time, end_time, enabled_str,
+        )
+
+        self._service_call_with_retry(
+            "select", "select_option",
+            entity_id=f"select.{base}_active", option=active_option,
+        )
+        self._service_call_with_retry(
+            "select", "select_option",
+            entity_id=f"select.{base}_begin", option=start_time,
+        )
+        self._service_call_with_retry(
+            "select", "select_option",
+            entity_id=f"select.{base}_end", option=end_time,
+        )
+        self._service_call_with_retry(
+            "select", "select_option",
+            entity_id=f"select.{base}_mode", option=mode_option,
+        )
+        self._service_call_with_retry(
+            "button", "press",
+            entity_id=f"button.{base}_update",
+        )
+
     def read_inverter_time_segments(self):
         """Read all time segments from the inverter with retry logic."""
         try:

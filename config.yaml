@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.44"
+version: "7.9.45"
 slug: "bess_manager"
 init: false
 arch:
@@ -48,6 +48,8 @@ options:
     grid_charge_max_solar_threshold_kwh: 0.1  # Grid charge blocked when solar exceeds this per period (kWh)
     grid_charge_min_headroom_kwh: 0.9         # Minimum free battery space required for grid charge (kWh)
     idle_enabled: true                        # Include IDLE as a DP mode option (true) or exclude it (false)
+    modbus_tou_control: false                 # Write TOU segments via local Modbus instead of Growatt cloud API (false = cloud API)
+    modbus_tou_entity_prefix: ""             # SolaX Modbus entity prefix, e.g. "growatt_modbus_min3600tlxh"
     temperature_derating:
       enabled: false  # Enable for outdoor batteries affected by cold weather
       weather_entity: ""  # HA weather entity for forecast (e.g. "weather.forecast_home")
@@ -147,6 +149,8 @@ schema:
     grid_charge_max_solar_threshold_kwh: float?
     grid_charge_min_headroom_kwh: float?
     idle_enabled: bool?
+    modbus_tou_control: bool?
+    modbus_tou_entity_prefix: str?
     temperature_derating:
       enabled: bool?
       weather_entity: str?

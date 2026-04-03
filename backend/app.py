@@ -366,6 +366,8 @@ class BESSController:
                     "gridChargeMaxSolarThresholdKwh": battery_config.get("grid_charge_max_solar_threshold_kwh", 0.1),
                     "gridChargeMinHeadroomKwh": battery_config.get("grid_charge_min_headroom_kwh", 0.9),
                     "idleEnabled": battery_config.get("idle_enabled", True),
+                    "modbusTouControl": battery_config.get("modbus_tou_control", False),
+                    "modbusTouEntityPrefix": battery_config.get("modbus_tou_entity_prefix", ""),
                 },
                 "home": {
                     "defaultHourly": home_config["consumption"],

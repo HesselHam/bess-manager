@@ -368,6 +368,8 @@ class BESSController:
                     "idleEnabled": battery_config.get("idle_enabled", True),
                     "modbusTouControl": battery_config.get("modbus_tou_control", False),
                     "modbusTouEntityPrefix": battery_config.get("modbus_tou_entity_prefix", ""),
+                    "exportLimitEnableOption": battery_config.get("export_limit_enable_option", "Meter 1"),
+                    "exportLimitSimulation": battery_config.get("export_limit_simulation", True),
                 },
                 "home": {
                     "defaultHourly": home_config["consumption"],
@@ -378,6 +380,7 @@ class BESSController:
                     "phaseCount": home_config["phase_count"],
                     "consumptionStrategy": home_config["consumption_strategy"],
                     "historyDays": home_config.get("history_days", 1),
+                    "inverterPhase": home_config.get("inverter_phase", ""),
                 },
                 "price": {
                     "area": electricity_price_config["area"],

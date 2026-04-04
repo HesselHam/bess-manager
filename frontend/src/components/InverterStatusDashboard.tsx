@@ -61,6 +61,7 @@ interface ScheduleHour {
   chargePowerRate: number;
   dischargePowerRate: number;
   gridCharge: boolean;
+  blockExport: boolean;
   isActual: boolean;
   isPredicted: boolean;
   // Action display fields
@@ -100,6 +101,7 @@ interface PeriodDetail {
   batteryAction: number;
   batteryMode: string;
   gridCharge: boolean;
+  blockExport: boolean;
   chargeRate: number;
   dischargeRate: number;
   gridImported: number;
@@ -528,6 +530,7 @@ const InverterStatusDashboard: React.FC = () => {
       dischargePowerRate: scheduleHour?.dischargePowerRate || 0,
       chargePowerRate: scheduleHour?.chargePowerRate || 100,
       gridCharge: scheduleHour?.gridCharge || false,
+      blockExport: scheduleHour?.blockExport || false,
       batteryMode: scheduleHour?.batteryMode || 'load_first',
       // Add formatted fields from dashboard data (they ARE the FormattedValue objects)
       batteryActionFormatted: dashboardHour?.batteryAction,
@@ -978,6 +981,7 @@ const InverterStatusDashboard: React.FC = () => {
                       <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Actie</th>
                       <th className="px-2 py-2 text-left font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">Mode</th>
                       <th className="px-2 py-2 text-center font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap">GridChg</th>
+                      <th className="px-2 py-2 text-center font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="Export geblokkeerd (verkoopprijs negatief)">BlkExp</th>
                       <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap" title="plan / werkelijk %">Chg%</th>
                       <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap" title="plan / werkelijk %">Dchg%</th>
                       {/* Flows */}
@@ -1092,6 +1096,9 @@ const InverterStatusDashboard: React.FC = () => {
                             </td>
                             <td className="px-2 py-1 text-center">
                               {p.gridCharge ? <span className="text-blue-600">✓</span> : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                            </td>
+                            <td className="px-2 py-1 text-center">
+                              {p.blockExport ? <span className="text-red-600">✓</span> : <span className="text-gray-300 dark:text-gray-600">—</span>}
                             </td>
                             <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{fmtDual(p.chargeRate, p.actualChargeRate, 0, true)}</td>
                             <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{fmtDual(p.dischargeRate, p.actualDischargeRate, 0, true)}</td>

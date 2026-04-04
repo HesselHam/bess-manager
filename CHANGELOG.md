@@ -5,6 +5,31 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.53] - 2026-04-04
+
+### Added
+
+- Export limit control via `export_limit_entity` sensor (optional, Modbus only). On each
+  period transition, blocks all grid export when sell price is negative by writing
+  `export_limit_enable_option` (default: "Meter 1") to the inverter's select entity;
+  restores "Disabled" otherwise. On startup, always writes "Disabled" as a safe initial state.
+- `export_limit_simulation: true` (default): DP and UI reflect export blocking without
+  writing to hardware. Set to `false` to enable actual inverter writes.
+- Decision Details table: new "BlkExp" column shows a red ✓ for periods where export is
+  planned to be blocked (sell price negative).
+
+### Fixed
+
+- `inverter_phase` from `config.yaml` was never propagated to `HomeSettings` — the power
+  monitor always used the most-loaded phase instead of the configured inverter phase.
+- BDC is now explicitly enabled on startup for a guaranteed safe initial state.
+
+### Changed
+
+- DP optimization: EXPORT_ARBITRAGE is skipped when sell price is negative. For all other
+  modes, solar surplus that cannot be exported is modelled as curtailed (grid_exported=0),
+  so reward and SOE calculations correctly reflect no export revenue.
+
 ## [7.9.52] - 2026-04-04
 
 ### Fixed

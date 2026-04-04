@@ -128,6 +128,8 @@ class BatterySettings:
     idle_enabled: bool = True
     modbus_tou_control: bool = False
     modbus_tou_entity_prefix: str = ""
+    export_limit_enable_option: str = "Meter 1"
+    export_limit_simulation: bool = True
     reserved_capacity: float = field(init=False)
     min_soe_kwh: float = field(init=False)
     max_soe_kwh: float = field(init=False)

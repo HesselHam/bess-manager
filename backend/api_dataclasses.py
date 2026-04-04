@@ -99,6 +99,7 @@ class APIBatterySettings:
     estimatedConsumption: float  # kWh - estimated daily consumption
     consumptionStrategy: str  # consumption forecast strategy
     idleDeadbandPct: float  # % of usable capacity for IDLE mode deadband
+    exportLimitSimulation: bool  # True = DP/UI only, no hardware writes
 
     @classmethod
     def from_internal(
@@ -121,6 +122,7 @@ class APIBatterySettings:
             estimatedConsumption=estimated_consumption,
             consumptionStrategy=consumption_strategy,
             idleDeadbandPct=battery.idle_deadband_pct,
+            exportLimitSimulation=battery.export_limit_simulation,
         )
 
     def to_internal_update(self) -> dict:

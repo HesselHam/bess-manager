@@ -640,10 +640,14 @@ def _run_dynamic_programming(
                 # EXPORT_ARBITRAGE requires enough SOE for at least one full period
                 # at max discharge power. Without this, the DP prefers emptying the
                 # last scraps of battery over decently supporting load.
+                # Also blocked when export is blocked (sell_price < 0): battery would
+                # discharge with nowhere to send the energy.
                 if mode == "EXPORT_ARBITRAGE":
                     available_soe = soe - battery_settings.min_soe_kwh
                     min_export_soe = battery_settings.max_discharge_power_kw * dt
                     if available_soe < min_export_soe:
+                        continue
+                    if sell_price[t] < 0.0:
                         continue
 
                 battery_charge, battery_discharge, grid_imported, grid_exported, next_soe = (
@@ -657,6 +661,12 @@ def _run_dynamic_programming(
                         max_charge_power_override=period_max_charge,
                     )
                 )
+
+                # When export is blocked (sell_price < 0), solar surplus that cannot
+                # be stored is curtailed by the inverter. Zero grid_exported so the
+                # reward correctly reflects no export revenue.
+                if sell_price[t] < 0.0:
+                    grid_exported = 0.0
 
                 reward, new_cost_basis, period_data = _calculate_reward(
                     mode=mode,

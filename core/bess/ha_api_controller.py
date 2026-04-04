@@ -885,6 +885,30 @@ class HomeAssistantAPIController:
             option=option,
         )
 
+    def set_export_limit(self, block: bool, enable_option: str) -> None:
+        """Block or allow grid export via the inverter's export limit select entity.
+
+        When block=True, selects enable_option (e.g. 'Meter 1') to limit export to 0W.
+        When block=False, selects 'Disabled' to allow normal export.
+        Only called on transitions to avoid EEPROM wear on the Modbus connection.
+
+        Requires 'export_limit_entity' to be configured in sensors. If not
+        configured (empty string), this method returns immediately.
+        """
+        entity_id = self.sensors.get("export_limit_entity")
+        if not entity_id:
+            return
+
+        option = enable_option if block else "Disabled"
+        logger.info("%s grid export (option: %s)", "Blocking" if block else "Allowing", option)
+
+        self._service_call_with_retry(
+            "select",
+            "select_option",
+            entity_id=entity_id,
+            option=option,
+        )
+
     def grid_charge_enabled(self):
         """Return True if grid charging is enabled."""
         try:

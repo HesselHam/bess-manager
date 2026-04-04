@@ -133,6 +133,9 @@ class BatterySystemManager:
         # BDC transition tracking: None = unknown (forces write on first period)
         self._bdc_enabled: bool | None = None
 
+        # Export limit transition tracking: None = unknown (forces write on first period)
+        self._export_blocked: bool | None = None
+
         # Prediction caches (populated by _fetch_predictions)
         self._consumption_predictions: list[float] | None = None
         self._solar_predictions: list[float] | None = None
@@ -273,6 +276,22 @@ class BatterySystemManager:
 
                 # Sync SOC limits from config to inverter (config as master)
                 self._sync_soc_limits()
+
+                # Safe initial inverter states on startup
+                try:
+                    self.controller.set_bdc_state(True)
+                    self._bdc_enabled = True
+                except Exception:
+                    logger.warning("Failed to enable BDC on startup")
+
+                try:
+                    self.controller.set_export_limit(
+                        False,
+                        self.battery_settings.export_limit_enable_option,
+                    )
+                    self._export_blocked = False
+                except Exception:
+                    logger.warning("Failed to disable export limit on startup")
 
                 # Initialize schedule from inverter - preserves original logic
                 self._initialize_tou_schedule_from_inverter()
@@ -2054,6 +2073,40 @@ class BatterySystemManager:
         self.controller.set_grid_charge(grid_charge)
         self.controller.set_charging_power_rate(charge_rate)
         self.controller.set_discharging_power_rate(discharge_rate)
+
+        # Export limit: block all export when sell price is negative, otherwise disable.
+        # Written only on transitions to avoid EEPROM wear.
+        try:
+            _, sell_prices = self.price_manager.get_available_prices()
+            sell_price = sell_prices[period] if period < len(sell_prices) else 0.0
+        except Exception:
+            sell_price = 0.0
+
+        should_block_export = sell_price < 0.0
+        if should_block_export != self._export_blocked:
+            if not self.battery_settings.export_limit_simulation:
+                try:
+                    self.controller.set_export_limit(
+                        should_block_export,
+                        self.battery_settings.export_limit_enable_option,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Export limit change failed (period=%d, sell_price=%.4f, block=%s); "
+                        "will retry next period",
+                        period,
+                        sell_price,
+                        should_block_export,
+                    )
+                    should_block_export = self._export_blocked  # keep previous state on failure
+            else:
+                logger.debug(
+                    "Export limit simulation: period=%d sell_price=%.4f block=%s (no HW write)",
+                    period,
+                    sell_price,
+                    should_block_export,
+                )
+            self._export_blocked = should_block_export
 
         # BDC control: write only on transitions to avoid EEPROM wear.
         # _bdc_enabled=None at startup forces a write on the first period.

@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.52"
+version: "7.9.53"
 slug: "bess_manager"
 init: false
 arch:
@@ -50,6 +50,8 @@ options:
     idle_enabled: true                        # Include IDLE as a DP mode option (true) or exclude it (false)
     modbus_tou_control: false                 # Write TOU segments via local Modbus instead of Growatt cloud API (false = cloud API)
     modbus_tou_entity_prefix: ""             # SolaX Modbus entity prefix, e.g. "growatt_modbus_min3600tlxh"
+    export_limit_enable_option: "Meter 1"    # Option to select on export_limit_entity to block export (Meter 1 / Meter 2 / CT Clamp)
+    export_limit_simulation: true            # When true: DP and UI reflect export blocking, but inverter is not written
     temperature_derating:
       enabled: false  # Enable for outdoor batteries affected by cold weather
       weather_entity: ""  # HA weather entity for forecast (e.g. "weather.forecast_home")
@@ -90,6 +92,7 @@ options:
     battery_discharging_power_rate: "number.growatt_min_3600tl_xh_battery_discharge_power_limit"
     grid_charge: "switch.growatt_min_3600tl_xh_charge_from_grid"
     bdc_switch: "select.growatt_modbus_min3600tlxh_inverter_switch"  # BDC switch for HOLD mode power saving (optional, Modbus only)
+    export_limit_entity: ""                                          # Export limit select entity for blocking export at negative prices (optional, Modbus only)
     # === Real-time Power Sensors (Primary - Live Power Flow) ===
     pv_power: "sensor.growatt_min_3600tl_xh_internal_wattage"        # Total solar DC production
     local_load_power: "sensor.growatt_min_3600tl_xh_local_load_power"  # Home consumption
@@ -151,6 +154,8 @@ schema:
     idle_enabled: bool?
     modbus_tou_control: bool?
     modbus_tou_entity_prefix: str?
+    export_limit_enable_option: str?
+    export_limit_simulation: bool?
     temperature_derating:
       enabled: bool?
       weather_entity: str?
@@ -184,6 +189,7 @@ schema:
     battery_discharging_power_rate: str
     grid_charge: str
     bdc_switch: str?
+    export_limit_entity: str?
     current_l1: str
     current_l2: str
     current_l3: str

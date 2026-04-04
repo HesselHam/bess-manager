@@ -226,18 +226,18 @@ def _calculate_mode_energy_flows(
         battery_discharge = 0.0
 
     elif mode == "EXPORT_ARBITRAGE":
-        # Discharge battery to grid at max rate
-        battery_discharge = max_discharge
-        battery_charge = 0.0
+        # Hybrid inverter: AC output = solar + battery, capped at max_discharge.
+        # Solar fills part of the inverter's capacity; battery provides the remainder.
+        battery_discharge = max(0.0, max_discharge - solar)
 
-        solar_to_load = min(solar, consumption)
-        remaining_load = max(0.0, consumption - solar_to_load)
-        battery_to_load = min(remaining_load, battery_discharge)
-        battery_to_grid = battery_discharge - battery_to_load
+        # Solar beyond inverter capacity could charge battery; in practice always 0
+        # because DP chooses SOLAR_STORAGE when solar > max_discharge.
+        solar_to_battery = max(0.0, solar - max_discharge)
+        battery_charge = min(solar_to_battery, max_charge)
 
-        grid_imported = max(0.0, remaining_load - battery_to_load)
-        solar_surplus = max(0.0, solar - consumption)
-        grid_exported = solar_surplus + battery_to_grid
+        inverter_output = battery_discharge + solar - solar_to_battery  # = max_discharge
+        grid_imported = max(0.0, consumption - inverter_output)
+        grid_exported = max(0.0, inverter_output - consumption)
 
     else:
         raise ValueError(f"Unknown mode: {mode}")

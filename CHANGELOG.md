@@ -5,6 +5,17 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.50] - 2026-04-04
+
+### Fixed
+
+- EXPORT_ARBITRAGE energy flow now correctly accounts for solar in battery discharge
+  calculation. The Growatt hybrid inverter's AC output (solar + battery) is capped at
+  max_discharge (3.6 kW = 0.9 kWh/period). Previously `battery_discharge = max_discharge`
+  ignored solar, causing the battery to over-discharge by the solar contribution and
+  grid_exported to be overestimated. Fix: `battery_discharge = max(0, max_discharge - solar)`.
+  At typical solar levels this reduces battery wear and corrects SOE tracking.
+
 ## [7.9.49] - 2026-04-04
 
 ### Fixed

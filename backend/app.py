@@ -384,6 +384,8 @@ class BESSController:
                     "modbusTouEntityPrefix": battery_config.get("modbus_tou_entity_prefix", ""),
                     "exportLimitEnableOption": battery_config.get("export_limit_enable_option", "Meter 1"),
                     "exportLimitSimulation": battery_config.get("export_limit_simulation", True),
+                    "exportLookAheadGuard": battery_config.get("export_look_ahead_guard", False),
+                    "exportPostprocessReorder": battery_config.get("export_postprocess_reorder", False),
                 },
                 "home": {
                     "defaultHourly": home_config["consumption"],

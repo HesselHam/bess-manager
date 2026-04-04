@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.55"
+version: "7.9.56"
 slug: "bess_manager"
 init: false
 arch:
@@ -52,6 +52,8 @@ options:
     modbus_tou_entity_prefix: ""             # SolaX Modbus entity prefix, e.g. "growatt_modbus_min3600tlxh"
     export_limit_enable_option: "Meter 1"    # Option to select on export_limit_entity to block export (Meter 1 / Meter 2 / CT Clamp)
     export_limit_simulation: true            # When true: DP and UI reflect export blocking, but inverter is not written
+    export_look_ahead_guard: false           # Block EXPORT if next period has strictly higher sell price (simple heuristic)
+    export_postprocess_reorder: false        # After DP: reassign EXPORT to highest-price periods in each sell window (robust fix)
     temperature_derating:
       enabled: false  # Enable for outdoor batteries affected by cold weather
       weather_entity: ""  # HA weather entity for forecast (e.g. "weather.forecast_home")
@@ -156,6 +158,8 @@ schema:
     modbus_tou_entity_prefix: str?
     export_limit_enable_option: str?
     export_limit_simulation: bool?
+    export_look_ahead_guard: bool?
+    export_postprocess_reorder: bool?
     temperature_derating:
       enabled: bool?
       weather_entity: str?

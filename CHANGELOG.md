@@ -5,6 +5,21 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.56] - 2026-04-05
+
+### Added
+
+- `export_look_ahead_guard` (config, default `false`): Blocks `EXPORT_ARBITRAGE` in the DP
+  backward pass when the immediately following period has a strictly higher sell price.
+  Simple heuristic; most effective when the better price is exactly one period away.
+- `export_postprocess_reorder` (config, default `false`): After the DP forward pass,
+  re-assigns `EXPORT_ARBITRAGE` actions within each contiguous sell window to the
+  highest-priced periods. Addresses the greedy early-export bias caused by SOE-state
+  discretization flatness (`V[t+1, i_high] ≈ V[t+1, i_low]` when both states have
+  sufficient charge for full discharge). Falls back to original mode if SOE is
+  insufficient after reordering. Both options are disabled by default; enable
+  independently via `config.yaml`.
+
 ## [7.9.55] - 2026-04-04
 
 ### Fixed

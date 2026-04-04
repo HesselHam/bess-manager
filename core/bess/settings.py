@@ -130,6 +130,8 @@ class BatterySettings:
     modbus_tou_entity_prefix: str = ""
     export_limit_enable_option: str = "Meter 1"
     export_limit_simulation: bool = True
+    export_look_ahead_guard: bool = False
+    export_postprocess_reorder: bool = False
     reserved_capacity: float = field(init=False)
     min_soe_kwh: float = field(init=False)
     max_soe_kwh: float = field(init=False)
@@ -182,6 +184,8 @@ class BatterySettings:
             self.idle_enabled = battery_config.get("idle_enabled", True)
             self.modbus_tou_control = battery_config.get("modbus_tou_control", False)
             self.modbus_tou_entity_prefix = battery_config.get("modbus_tou_entity_prefix", "")
+            self.export_look_ahead_guard = battery_config.get("export_look_ahead_guard", False)
+            self.export_postprocess_reorder = battery_config.get("export_postprocess_reorder", False)
             self.__post_init__()
         return self
 

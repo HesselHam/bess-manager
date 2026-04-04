@@ -652,6 +652,13 @@ def _run_dynamic_programming(
                         continue
                     if sell_price[t] < 0.0:
                         continue
+                    # Look-ahead guard: defer export when the immediately following
+                    # period has a strictly higher sell price. Biases the DP toward
+                    # local price peaks. Effective only for 1-period gaps; for larger
+                    # windows use export_postprocess_reorder instead.
+                    if battery_settings.export_look_ahead_guard:
+                        if t + 1 < horizon and sell_price[t + 1] > sell_price[t]:
+                            continue
 
                 battery_charge, battery_discharge, grid_imported, grid_exported, next_soe = (
                     _calculate_mode_energy_flows(
@@ -806,6 +813,169 @@ def _create_idle_schedule(
     )
 
 
+def _postprocess_export_reorder(
+    hourly_results: list[PeriodData],
+    buy_price: list[float],
+    sell_price: list[float],
+    home_consumption: list[float],
+    solar_production: list[float],
+    battery_settings: BatterySettings,
+    dt: float,
+    initial_soe: float,
+    initial_cost_basis: float,
+    currency: str,
+) -> list[PeriodData]:
+    """Reorder EXPORT_ARBITRAGE within sell windows to prefer higher-priced periods.
+
+    Addresses a DP backward-induction bias: when consecutive periods all have
+    sufficient SOE for full discharge, V[t+1, i_high] ≈ V[t+1, i_low] because
+    both states lead to identical future opportunities. This causes the DP to
+    export greedily at the first available period rather than waiting for the
+    price peak within the window.
+
+    For each contiguous sell window (sell_price > 0) that contains at least one
+    EXPORT_ARBITRAGE period, re-assigns those K EXPORT slots to the K
+    highest-revenue periods (grid_exported × sell_price) in the window. Revenue
+    accounts for solar surplus and home consumption, not just price. Performs a
+    forward simulation through
+    each modified window to maintain a consistent SOE trajectory. Falls back to
+    the original mode when a reordered EXPORT is infeasible (insufficient SOE)
+    or unprofitable (profitability check).
+
+    Periods outside sell windows and the total SOE budget are never changed.
+    """
+    result = list(hourly_results)
+    horizon = len(result)
+    min_export_soe = battery_settings.max_discharge_power_kw * dt
+
+    t = 0
+    while t < horizon:
+        if sell_price[t] <= 0.0:
+            t += 1
+            continue
+
+        window_start = t
+        while t < horizon and sell_price[t] > 0.0:
+            t += 1
+        window_end = t
+
+        window = list(range(window_start, window_end))
+        export_periods = {
+            p for p in window if result[p].decision.strategic_intent == "EXPORT_ARBITRAGE"
+        }
+        if not export_periods:
+            continue
+
+        k = len(export_periods)
+        soe = initial_soe if window_start == 0 else result[window_start - 1].energy.battery_soe_end
+        cost_basis = (
+            initial_cost_basis if window_start == 0 else result[window_start - 1].decision.cost_basis
+        )
+
+        # Sort by actual export revenue (grid_exported × sell_price) rather than
+        # sell_price alone. Solar surplus and home consumption both affect how much
+        # of the battery discharge reaches the grid, so periods with high solar
+        # earn more even at the same price.  Use window-start SOE for all periods
+        # as an approximation — sufficient because all candidate periods have
+        # available_soe >= min_export_soe (same max_discharge applies to each).
+        def _export_revenue(p: int) -> float:
+            _, _, _, grid_exported, _ = _calculate_mode_energy_flows(
+                mode="EXPORT_ARBITRAGE",
+                soe=soe,
+                solar=solar_production[p],
+                consumption=home_consumption[p],
+                battery_settings=battery_settings,
+                dt=dt,
+            )
+            return grid_exported * sell_price[p]
+
+        target_export = set(sorted(window, key=_export_revenue, reverse=True)[:k])
+
+        if target_export == export_periods:
+            continue  # Already at highest-reward periods — nothing to do
+
+        changed = False
+        for period in window:
+            original_mode = result[period].decision.strategic_intent
+            new_mode = "EXPORT_ARBITRAGE" if period in target_export else original_mode
+
+            if new_mode == "EXPORT_ARBITRAGE" and (soe - battery_settings.min_soe_kwh) < min_export_soe:
+                new_mode = original_mode  # Insufficient SOE after reordering — fall back
+
+            charge, discharge, imported, exported, next_soe = _calculate_mode_energy_flows(
+                mode=new_mode,
+                soe=soe,
+                solar=solar_production[period],
+                consumption=home_consumption[period],
+                battery_settings=battery_settings,
+                dt=dt,
+            )
+
+            reward, new_cost_basis, period_data = _calculate_reward(
+                mode=new_mode,
+                battery_charge=charge,
+                battery_discharge=discharge,
+                grid_imported=imported,
+                grid_exported=exported,
+                soe=soe,
+                next_soe=next_soe,
+                period=period,
+                home_consumption=home_consumption[period],
+                battery_settings=battery_settings,
+                buy_price=buy_price,
+                sell_price=sell_price,
+                solar_production=solar_production[period],
+                cost_basis=cost_basis,
+                currency=currency,
+            )
+
+            if reward == float("-inf"):
+                # Profitability check blocked the reordered EXPORT — fall back to original
+                charge, discharge, imported, exported, next_soe = _calculate_mode_energy_flows(
+                    mode=original_mode,
+                    soe=soe,
+                    solar=solar_production[period],
+                    consumption=home_consumption[period],
+                    battery_settings=battery_settings,
+                    dt=dt,
+                )
+                _, new_cost_basis, period_data = _calculate_reward(
+                    mode=original_mode,
+                    battery_charge=charge,
+                    battery_discharge=discharge,
+                    grid_imported=imported,
+                    grid_exported=exported,
+                    soe=soe,
+                    next_soe=next_soe,
+                    period=period,
+                    home_consumption=home_consumption[period],
+                    battery_settings=battery_settings,
+                    buy_price=buy_price,
+                    sell_price=sell_price,
+                    solar_production=solar_production[period],
+                    cost_basis=cost_basis,
+                    currency=currency,
+                )
+                new_mode = original_mode
+
+            if new_mode != original_mode:
+                changed = True
+
+            result[period] = period_data
+            soe = next_soe
+            cost_basis = new_cost_basis
+
+        if changed:
+            logger.info(
+                "Post-processing: reordered EXPORT_ARBITRAGE in sell window [%d, %d] "
+                "to higher-price periods",
+                window_start,
+                window_end - 1,
+            )
+
+    return result
+
+
 def optimize_battery_schedule(
     buy_price: list[float],
     sell_price: list[float],
@@ -911,6 +1081,21 @@ def optimize_battery_schedule(
         period_data = stored_period_data[(t, i)]
         hourly_results.append(period_data)
         current_soe = period_data.energy.battery_soe_end
+
+    # Step 2b: Post-process export order within sell windows (optional)
+    if battery_settings.export_postprocess_reorder:
+        hourly_results = _postprocess_export_reorder(
+            hourly_results=hourly_results,
+            buy_price=buy_price,
+            sell_price=sell_price,
+            home_consumption=home_consumption,
+            solar_production=solar_production,
+            battery_settings=battery_settings,
+            dt=dt,
+            initial_soe=initial_soe,
+            initial_cost_basis=initial_cost_basis,
+            currency=currency,
+        )
 
     # Step 3: Calculate economic summary directly from PeriodData
     total_base_cost = sum(

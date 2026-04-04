@@ -622,11 +622,11 @@ def _run_dynamic_programming(
                 if mode == "IDLE" and not battery_settings.idle_enabled:
                     continue
 
-                # IDLE requires solar and near or above consumption: blocked when there
-                # is no solar, or when the deficit exceeds 0.1 kWh (100 Wh) per period.
+                # IDLE requires solar >= consumption: blocked when there is no solar,
+                # or when solar cannot cover home load.
                 if mode == "IDLE" and (
                     solar_production[t] <= 0.01
-                    or solar_production[t] < home_consumption[t] - 0.1
+                    or solar_production[t] < home_consumption[t]
                 ):
                     continue
 

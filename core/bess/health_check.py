@@ -292,7 +292,7 @@ def run_system_health_checks(system_manager):
     all_component_checks.extend(sensor_collector_health)
 
     # 5. Power Monitor (Power Monitoring) - real-time power flow tracking
-    power_checks = system_manager._power_monitor.check_health()
+    power_checks = system_manager.power_monitor.check_health()
     all_component_checks.extend(power_checks)
 
     # 6. Historic data access

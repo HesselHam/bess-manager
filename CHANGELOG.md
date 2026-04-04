@@ -5,6 +5,12 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.55] - 2026-04-04
+
+### Fixed
+
+- Health check crash on startup: `_power_monitor` reference not updated after rename to `power_monitor`.
+
 ## [7.9.54] - 2026-04-04
 
 ### Changed

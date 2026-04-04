@@ -66,7 +66,7 @@ class HomePowerMonitor:
         self.target_charging_power_pct = self.battery_settings.charging_power_rate
 
         # IDLE state machine
-        self._idle_goal_soc: int | None = None
+        self._idle_goal_soc: float | None = None
         self._idle_deadband_pct: int | None = None
         self._idle_state: str | None = None  # None | "NORMAL" | "CHARGING"
 
@@ -196,27 +196,63 @@ class HomePowerMonitor:
 
         return max(0, charging_power_pct)
 
-    def adjust_battery_charging(self, fuse_protection: bool = True) -> None:
-        self._enforce_idle_deadband()
-        if not fuse_protection or not self.controller.grid_charge_enabled():
-            # Fuse protection disabled (non-charging mode) or grid charge is off:
-            # set the inverter to the intended rate so it is ready when grid
-            # charging activates on the next schedule update.
-            target_power = self.target_charging_power_pct
-        else:
-            target_power = self.calculate_available_charging_power()
+    def adjust_fuse_protection(self) -> None:
+        """Adjust charge rate based on available fuse capacity.
+
+        Only acts when grid charging is active. Runs every 15 seconds.
+        """
+        if not self.controller.grid_charge_enabled():
+            return
+
+        target_power = self.calculate_available_charging_power()
         current_power = self.controller.get_charging_power_rate()
 
-        # Skip if no change needed (within 1% tolerance)
         if abs(target_power - current_power) < 1:
             return
 
         logger.info(
-            f"Adjusting charging power from {current_power:.0f}% to {target_power:.0f}%"
+            "Adjusting charging power from %.0f%% to %.0f%%",
+            current_power,
+            target_power,
         )
         self.controller.set_charging_power_rate(int(target_power))
 
-    def set_idle_context(self, goal_soc: int, deadband_pct: int) -> None:
+    def enforce_idle_deadband(self) -> None:
+        """Enforce SOC maintenance for IDLE mode.
+
+        Runs every 30 seconds. Only active when IDLE context is set.
+        Charge rate only — discharge is never touched.
+          NORMAL → CHARGING when soc < goal_soc - deadband_pct → set charge=100%
+          CHARGING → NORMAL when soc >= goal_soc → set charge=0%
+        """
+        if self._idle_state is None:
+            return
+
+        soc = self.controller.get_battery_soc()
+        if soc is None:
+            return
+
+        if self._idle_state == "NORMAL":
+            if soc < self._idle_goal_soc - self._idle_deadband_pct:
+                self._idle_state = "CHARGING"
+                logger.info(
+                    "IDLE: SOC %.0f%% below threshold %.0f%% — enabling charge",
+                    soc,
+                    self._idle_goal_soc - self._idle_deadband_pct,
+                )
+                self.controller.set_charging_power_rate(100)
+
+        elif self._idle_state == "CHARGING":
+            if soc >= self._idle_goal_soc:
+                self._idle_state = "NORMAL"
+                logger.info(
+                    "IDLE: SOC %.0f%% reached goal %.0f%% — disabling charge",
+                    soc,
+                    self._idle_goal_soc,
+                )
+                self.controller.set_charging_power_rate(0)
+
+    def set_idle_context(self, goal_soc: float, deadband_pct: int) -> None:
         """Set IDLE state machine for the current 15-min period.
 
         Called by _apply_period_schedule when the period intent is IDLE.
@@ -239,42 +275,6 @@ class HomePowerMonitor:
         self._idle_goal_soc = None
         self._idle_deadband_pct = None
         self._idle_state = None
-
-    def _enforce_idle_deadband(self) -> None:
-        """Enforce SOC maintenance for IDLE mode.
-
-        Runs every minute. Charge rate only — discharge is never touched.
-          NORMAL → CHARGING when soc < goal_soc - deadband_pct → set charge=100%
-          CHARGING → NORMAL when soc >= goal_soc → set charge=0%
-        """
-        if self._idle_state is None:
-            return
-
-        soc = self.controller.get_battery_soc()
-        if soc is None:
-            return
-
-        soc_int = int(soc)
-
-        if self._idle_state == "NORMAL":
-            if soc_int < self._idle_goal_soc - self._idle_deadband_pct:
-                self._idle_state = "CHARGING"
-                logger.info(
-                    "IDLE: SOC %d%% below threshold %d%% — enabling charge",
-                    soc_int,
-                    self._idle_goal_soc - self._idle_deadband_pct,
-                )
-                self.controller.set_charging_power_rate(100)
-
-        elif self._idle_state == "CHARGING":
-            if soc_int >= self._idle_goal_soc:
-                self._idle_state = "NORMAL"
-                logger.info(
-                    "IDLE: SOC %d%% reached goal %d%% — disabling charge",
-                    soc_int,
-                    self._idle_goal_soc,
-                )
-                self.controller.set_charging_power_rate(0)
 
     def update_target_charging_power(self, percentage: float) -> None:
         """Update the target charging power percentage.

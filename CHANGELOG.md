@@ -5,6 +5,21 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.54] - 2026-04-04
+
+### Changed
+
+- Power monitor refactored into two independent scheduled functions:
+  `adjust_fuse_protection` (every 15 s, only when grid charging active) and
+  `enforce_idle_deadband` (every 30 s, only when IDLE context is set). Previously
+  a single 1-minute job ran both unconditionally.
+- `check_preemptive_bdc` is now a public method scheduled via
+  `CronTrigger(minute="14,29,44,59")` — one minute before each period boundary.
+- Power monitor jobs are only registered when the power monitor is available
+  (skipped in controller-less environments to prevent startup crash).
+- IDLE mode guard tightened: blocked when solar is zero, or when the solar deficit
+  exceeds 0.1 kWh (100 Wh) per period. Previously blocked only when solar was zero.
+
 ## [7.9.53] - 2026-04-04
 
 ### Added

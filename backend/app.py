@@ -9,6 +9,7 @@ import log_config  # noqa: F401
 from api import router as endpoints_router
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -266,11 +267,24 @@ class BESSController:
             misfire_grace_time=30,  # Allow 30 seconds of misfire before warning
         )
 
-        # Charging power adjustment + IDLE state machine enforcement (every minute)
+        # Fuse protection and IDLE deadband (only when power monitor is available)
+        if self.system.power_monitor is not None:
+            self.scheduler.add_job(
+                self.system.power_monitor.adjust_fuse_protection,
+                IntervalTrigger(seconds=15),
+                misfire_grace_time=5,
+            )
+            self.scheduler.add_job(
+                self.system.power_monitor.enforce_idle_deadband,
+                IntervalTrigger(seconds=30),
+                misfire_grace_time=5,
+            )
+
+        # BDC pre-emptive: enable BDC one minute before HOLD→non-HOLD transition
         self.scheduler.add_job(
-            self.system.adjust_charging_power,
-            CronTrigger(minute="*"),
-            misfire_grace_time=30,  # Allow 30 seconds of misfire before warning
+            self.system.check_preemptive_bdc,
+            CronTrigger(minute="14,29,44,59"),
+            misfire_grace_time=30,
         )
 
         self.scheduler.start()

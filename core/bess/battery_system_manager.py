@@ -124,7 +124,7 @@ class BatterySystemManager:
         )
 
         # Initialize monitors (created in start() if controller available)
-        self._power_monitor = None
+        self.power_monitor = None
 
         # Current schedule tracking
         self._current_schedule = None
@@ -265,7 +265,7 @@ class BatterySystemManager:
         try:
             # Initialize monitors if controller available
             if self._controller:
-                self._power_monitor = HomePowerMonitor(
+                self.power_monitor = HomePowerMonitor(
                     self._controller,
                     home_settings=self.home_settings,
                     battery_settings=self.battery_settings,
@@ -2125,15 +2125,15 @@ class BatterySystemManager:
                 # Do not update _bdc_enabled — retry next period
 
         # Update power monitor: sync target rate and IDLE state machine
-        if self._power_monitor:
-            self._power_monitor.update_target_charging_power(charge_rate)
+        if self.power_monitor:
+            self.power_monitor.update_target_charging_power(charge_rate)
             if strategic_intent == "IDLE":
                 soc = self.controller.get_battery_soc()
-                goal_soc = int(soc) if soc is not None else int(self.battery_settings.min_soc)
+                goal_soc = soc if soc is not None else int(self.battery_settings.min_soc)
                 deadband_pct = int(self.battery_settings.idle_deadband_pct)
-                self._power_monitor.set_idle_context(goal_soc, deadband_pct)
+                self.power_monitor.set_idle_context(goal_soc, deadband_pct)
             else:
-                self._power_monitor.clear_idle_context()
+                self.power_monitor.clear_idle_context()
 
     def _calculate_initial_cost_basis(self, current_period: int) -> float:
         """Calculate marginal cost of battery energy using historical data.
@@ -2416,11 +2416,11 @@ class BatterySystemManager:
         # Build daily view with current period
         return self.daily_view_builder.build_daily_view(current_period)
 
-    def _check_preemptive_bdc(self) -> None:
+    def check_preemptive_bdc(self) -> None:
         """Send BDC On one minute before a HOLD→non-HOLD transition.
 
-        Runs every minute. At T-1 minute (minute % 15 == 14), checks whether
-        the current period is HOLD and the next is non-HOLD. If so, sends
+        Scheduled at minute 14,29,44,59 — exactly one minute before each period boundary.
+        Checks whether the current period is HOLD and the next is non-HOLD. If so, sends
         BDC On early so the battery is ready at the period boundary.
         """
         intents = self._schedule_manager.strategic_intents
@@ -2428,9 +2428,6 @@ class BatterySystemManager:
             return
 
         now = datetime.now()
-        if now.minute % 15 != 14:
-            return
-
         current_period = now.hour * 4 + now.minute // 15
         next_period = current_period + 1
 
@@ -2452,23 +2449,6 @@ class BatterySystemManager:
                         "Preemptive BDC On failed; will retry at period start"
                     )
 
-    def adjust_charging_power(self) -> None:
-        """Adjust charging power based on house consumption."""
-        try:
-            # Get current period control settings (15-min resolution)
-            now = datetime.now()
-            current_period = now.hour * 4 + now.minute // 15
-            control = self._schedule_manager.get_period_control(current_period)
-            charge_rate = control["charge_rate"]
-            grid_charge = control["grid_charge"]
-
-            if self._power_monitor:
-                self._power_monitor.adjust_battery_charging(fuse_protection=bool(grid_charge))
-
-            self._check_preemptive_bdc()
-
-        except (AttributeError, ValueError, KeyError) as e:
-            logger.error("Failed to adjust charging power: %s", str(e))
 
     def get_settings(self):
         """Get settings - return dataclasses directly for API layer conversion."""

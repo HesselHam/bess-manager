@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.52] - 2026-04-04
+
+### Fixed
+
+- Decision Details table: SOE end of period t now equals SOE start of period t+1.
+  Previously a gap of up to 0.67% (0.05 kWh on a 7.5 kWh battery) appeared due to the
+  DP discretizing the state space in 0.1 kWh steps — `battery_soe_end` stored the exact
+  computed float while the next period's `battery_soe_start` used the nearest grid point.
+  Fix: snap `battery_soe_end` to the same grid at storage time. DP optimization is unaffected.
+
 ## [7.9.51] - 2026-04-04
 
 ### Fixed

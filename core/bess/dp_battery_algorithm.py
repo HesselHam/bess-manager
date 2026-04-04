@@ -283,6 +283,12 @@ def _calculate_reward(
     current_buy_price = buy_price[period]
     current_sell_price = sell_price[period]
 
+    # Snap next_soe to the DP grid so battery_soe_end matches battery_soe_start of the
+    # next period exactly, eliminating the display gap caused by quantization rounding.
+    _max_i = round((battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
+    _snapped_i = min(max(0, round((next_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)), _max_i)
+    snapped_next_soe = battery_settings.min_soe_kwh + _snapped_i * SOE_STEP_KWH
+
     energy_data = EnergyData(
         solar_production=solar_production,
         home_consumption=home_consumption,
@@ -291,7 +297,7 @@ def _calculate_reward(
         grid_imported=grid_imported,
         grid_exported=grid_exported,
         battery_soe_start=soe,
-        battery_soe_end=next_soe,
+        battery_soe_end=snapped_next_soe,
     )
 
     # ============================================================================

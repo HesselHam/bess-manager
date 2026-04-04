@@ -315,6 +315,12 @@ class BatterySystemManager:
         is_first_run = self._current_schedule is None
 
         try:
+            # Apply current period settings immediately using the existing schedule so the
+            # inverter is updated at the period boundary before optimization completes.
+            # Skips silently on first run (no schedule yet).
+            if not prepare_next_day:
+                self._apply_period_schedule(current_period)
+
             # Handle special cases (midnight, next day prep)
             self._handle_special_cases(current_period, prepare_next_day)
 
@@ -2065,8 +2071,9 @@ class BatterySystemManager:
                 )
                 # Do not update _bdc_enabled — retry next period
 
-        # Update IDLE state machine in power monitor
+        # Update power monitor: sync target rate and IDLE state machine
         if self._power_monitor:
+            self._power_monitor.update_target_charging_power(charge_rate)
             if strategic_intent == "IDLE":
                 soc = self.controller.get_battery_soc()
                 goal_soc = int(soc) if soc is not None else int(self.battery_settings.min_soc)
@@ -2395,14 +2402,15 @@ class BatterySystemManager:
     def adjust_charging_power(self) -> None:
         """Adjust charging power based on house consumption."""
         try:
-            # Get current hour settings to ensure power monitor uses the correct target
-            current_hour = datetime.now().hour
-            settings = self._schedule_manager.get_hourly_settings(current_hour)
-            charge_rate = settings.get("charge_rate", 0)
+            # Get current period control settings (15-min resolution)
+            now = datetime.now()
+            current_period = now.hour * 4 + now.minute // 15
+            control = self._schedule_manager.get_period_control(current_period)
+            charge_rate = control["charge_rate"]
+            grid_charge = control["grid_charge"]
 
             if self._power_monitor:
-                self._power_monitor.update_target_charging_power(charge_rate)
-                self._power_monitor.adjust_battery_charging()
+                self._power_monitor.adjust_battery_charging(fuse_protection=bool(grid_charge))
 
             self._check_preemptive_bdc()
 

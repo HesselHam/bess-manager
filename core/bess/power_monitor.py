@@ -196,11 +196,12 @@ class HomePowerMonitor:
 
         return max(0, charging_power_pct)
 
-    def adjust_battery_charging(self) -> None:
+    def adjust_battery_charging(self, fuse_protection: bool = True) -> None:
         self._enforce_idle_deadband()
-        if not self.controller.grid_charge_enabled():
-            # Grid charge is off: set the inverter to the intended rate so it is
-            # ready when grid charging activates on the next schedule update.
+        if not fuse_protection or not self.controller.grid_charge_enabled():
+            # Fuse protection disabled (non-charging mode) or grid charge is off:
+            # set the inverter to the intended rate so it is ready when grid
+            # charging activates on the next schedule update.
             target_power = self.target_charging_power_pct
         else:
             target_power = self.calculate_available_charging_power()

@@ -126,7 +126,6 @@ class GrowattScheduleManager:
         self.detailed_intervals = []  # For overview display
         self.tou_intervals = []  # For actual TOU settings
         self.current_hour = 0  # Track current hour (0-23) for TOU schedule boundaries
-        self.hourly_settings = {}  # Pre-calculated settings for each hour (0-23)
         self.strategic_intents = []  # Store strategic intents from DP algorithm
         self.active_tou_intervals: list[
             dict
@@ -145,10 +144,7 @@ class GrowattScheduleManager:
     def _get_hourly_intent(self, hour: int) -> str:
         """Get dominant strategic intent for an hour by aggregating 4 quarterly periods.
 
-        LEGACY: This method is only used for hourly power rate display/logging.
-        With 15-min TOU resolution, actual battery mode control is done by TOU
-        segments via _group_periods_by_mode(). This method should be removed
-        once hourly aggregation is fully deprecated (see TODO.md).
+        Used by get_strategic_intent_summary() for display purposes only.
 
         Args:
             hour: Hour (0-23) to get intent for
@@ -550,65 +546,22 @@ class GrowattScheduleManager:
 
         return hardware_intervals
 
-    def _calculate_hourly_settings_with_strategic_intents(self):
-        """Pre-calculate hourly settings using strategic intents and proper power rates.
+    def get_period_control(self, period: int) -> dict:
+        """Get inverter control settings for a specific 15-minute period.
 
-        Aggregates quarterly strategic intents (96 periods) into hourly settings (24 hours)
-        for Growatt inverter control.
+        Args:
+            period: Period index (0-95 for a standard day)
+
+        Returns:
+            Dict with grid_charge, charge_rate, discharge_rate from INTENT_TO_CONTROL
         """
-        self.hourly_settings = {}
-
-        # REQUIRE strategic intents - no fallbacks
         if not self.strategic_intents:
+            raise ValueError("No strategic intents available")
+        if period < 0 or period >= len(self.strategic_intents):
             raise ValueError(
-                "Missing strategic intents for hourly settings calculation"
+                f"Period {period} out of range (0-{len(self.strategic_intents) - 1})"
             )
-
-        # Get number of periods to handle DST (92/96/100)
-        num_periods = len(self.strategic_intents)
-        num_hours = (num_periods + 3) // 4  # Round up to handle partial hours
-
-        intent_to_state = {
-            "HOLD": "hold",
-            "IDLE": "idle",
-            "LOAD_SUPPORT": "discharging",
-            "SOLAR_STORAGE": "charging",
-            "GRID_CHARGING": "charging",
-            "EXPORT_ARBITRAGE": "grid_first",
-        }
-
-        for hour in range(num_hours):
-            # Get dominant strategic intent for this hour (aggregates 4 quarterly periods)
-            intent = self._get_hourly_intent(hour)
-
-            if intent not in self.INTENT_TO_CONTROL:
-                raise ValueError(f"Unknown strategic intent at hour {hour}: {intent}")
-
-            control = self.INTENT_TO_CONTROL[intent]
-            grid_charge = control["grid_charge"]
-            charge_rate = control["charge_rate"]
-            discharge_rate = control["discharge_rate"]
-            batt_mode = self.INTENT_TO_MODE[intent]
-            state = intent_to_state[intent]
-
-            self.hourly_settings[hour] = {
-                "grid_charge": grid_charge,
-                "discharge_rate": discharge_rate,
-                "charge_rate": charge_rate,
-                "state": state,
-                "batt_mode": batt_mode,
-                "strategic_intent": intent,
-            }
-
-            logger.debug(
-                "Hour %02d: Intent=%s, ChargeRate=%d%%, DischargeRate=%d%%, GridCharge=%s, Mode=%s",
-                hour,
-                intent,
-                charge_rate,
-                discharge_rate,
-                grid_charge,
-                batt_mode,
-            )
+        return self.INTENT_TO_CONTROL[self.strategic_intents[period]]
 
     def create_schedule(
         self,
@@ -643,8 +596,6 @@ class GrowattScheduleManager:
             current_period=current_period,
             previous_tou_intervals=previous_tou_intervals,
         )
-        self._calculate_hourly_settings_with_strategic_intents()
-
         logger.info(
             "New Growatt schedule created with %d TOU intervals (%d active for hardware)",
             len(self.tou_intervals),
@@ -852,14 +803,6 @@ class GrowattScheduleManager:
                     }
                 )
 
-    def get_hourly_settings(self, hour):
-        if hour not in self.hourly_settings:
-            raise ValueError(
-                f"No hourly settings for hour {hour}. Strategic intents: {len(self.strategic_intents)}, Settings calculated: {len(self.hourly_settings)}"
-            )
-
-        return self.hourly_settings[hour]
-
     def get_strategic_intent_summary(self) -> dict:
         """Get a summary of strategic intents for the day (aggregated from quarterly periods)."""
         if not self.strategic_intents:
@@ -1054,8 +997,6 @@ class GrowattScheduleManager:
             logger.info(
                 "✅ TOU intervals from inverter are already in correct chronological order"
             )
-
-        # NO INTENT INFERENCE - leave hourly_settings empty until we get strategic intents
 
         # At startup, all intervals from inverter are active hardware intervals
         self.active_tou_intervals = list(self.tou_intervals)

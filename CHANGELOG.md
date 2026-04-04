@@ -5,6 +5,38 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.49] - 2026-04-04
+
+### Fixed
+
+- Charge rate no longer transitions mid-period in InfluxDB. `_apply_period_schedule` is
+  now called at the very start of `update_battery_schedule` (before optimization) so the
+  inverter is updated immediately at the period boundary. Previously the call happened only
+  after optimization + cloud API completed (up to several minutes late), causing InfluxDB
+  to record a within-period 100%→0% transition that averaged to ~50% or ~33%.
+- Power monitor `target_charging_power_pct` is now set exclusively by `_apply_period_schedule`
+  and no longer overwritten every minute by `adjust_charging_power`. The stale-schedule
+  overwrite was the second cause of mid-period charge rate flips.
+
+## [7.9.48] - 2026-04-04
+
+### Changed
+
+- Power monitor now reads inverter control settings at 15-minute period resolution
+  instead of hourly aggregation. Removed `hourly_settings` dict and
+  `_calculate_hourly_settings_with_strategic_intents()` from `GrowattScheduleManager`.
+  Replaced `get_hourly_settings()` with `get_period_control(period)` which directly
+  returns `INTENT_TO_CONTROL` for the exact current period.
+
+## [7.9.47] - 2026-04-04
+
+### Fixed
+
+- Power monitor no longer applies fuse-based charge rate limiting during non-charging
+  modes (LOAD_SUPPORT, HOLD, EXPORT_ARBITRAGE, SOLAR_STORAGE, IDLE). Fuse protection
+  now only active during GRID_CHARGING. Previously the power monitor could incorrectly
+  reduce charge rate to ~50% during discharge modes when phase load happened to be high.
+
 ## [7.9.46] - 2026-04-03
 
 ### Added

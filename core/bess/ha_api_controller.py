@@ -557,17 +557,20 @@ class HomeAssistantAPIController:
                 return None
 
             except requests.RequestException as e:
-                # Don't retry on 404 (sensor not found) - fail fast for missing sensors
+                # Don't retry on 4xx client errors — retrying won't help.
+                # 404 = sensor not found, 400 = invalid request (e.g. Modbus entity not ready).
                 if (
                     hasattr(e, "response")
                     and e.response is not None
-                    and e.response.status_code == 404
+                    and 400 <= e.response.status_code < 500
                 ):
                     logger.error(
-                        "API request to %s failed: Sensor not found (404). This indicates a missing or misconfigured sensor.",
+                        "API request to %s failed: %s (%d). Not retrying.",
                         url,
+                        str(e),
+                        e.response.status_code,
                     )
-                    raise  # Fail immediately on 404
+                    raise  # Fail immediately on 4xx
 
                 if attempt < self.max_attempts - 1:  # Not the last attempt
                     delay = self.retry_base_delay * (2**attempt)

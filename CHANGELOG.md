@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.51] - 2026-04-04
+
+### Fixed
+
+- HA API no longer retries on 4xx client errors. Previously all errors (including
+  400 Bad Request) triggered up to 3 retries with 2+4+8s backoff. A 400 response
+  (e.g. Modbus entity not ready on startup) now fails immediately and falls back to
+  cloud API, eliminating ~14 seconds of wasted delay per failed segment.
+
 ## [7.9.50] - 2026-04-04
 
 ### Fixed

@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- EXPORT_ARBITRAGE energy flow now correctly accounts for solar in battery discharge
-  calculation. The Growatt hybrid inverter's AC output (solar + battery) is capped at
-  max_discharge (3.6 kW = 0.9 kWh/period). Previously `battery_discharge = max_discharge`
-  ignored solar, causing the battery to over-discharge by the solar contribution and
-  grid_exported to be overestimated. Fix: `battery_discharge = max(0, max_discharge - solar)`.
-  At typical solar levels this reduces battery wear and corrects SOE tracking.
+- EXPORT_ARBITRAGE energy flow now correctly models the hybrid inverter's AC output cap.
+  Solar and battery share the inverter's 3.6 kW output (0.9 kWh/period); solar fills
+  part of that capacity and battery provides the rest. Previously the DP used
+  `battery_discharge = max_discharge` regardless of solar, so its internal model assumed
+  more battery discharge than actually occurs and overestimated grid_exported.
+  Fix: `battery_discharge = max(0, max_discharge - solar)`. The hardware was unaffected;
+  this corrects the DP's accounting of SOE and export revenue.
 
 ## [7.9.49] - 2026-04-04
 

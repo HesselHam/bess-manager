@@ -5,6 +5,19 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.58] - 2026-04-06
+
+### Changed
+
+- IDLE mode now blocked when `sell_price < 0`. Solar surplus during IDLE flows to
+  grid, so a negative sell price would cost money — same reasoning as the existing
+  EXPORT_ARBITRAGE guard. DP will prefer SOLAR_STORAGE or LOAD_SUPPORT instead.
+- IDLE state machine now inverted when SOC equals `min_soc` at period start.
+  Normal IDLE holds SOC at current level (charge when SOC drops below goal minus
+  deadband). Inverted IDLE charges immediately and stops when SOC reaches
+  goal plus deadband, resuming charge when SOC drops back to goal. Prevents
+  battery from sitting at minimum SOC during IDLE periods.
+
 ## [7.9.57] - 2026-04-05
 
 ### Fixed

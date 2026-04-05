@@ -2071,7 +2071,11 @@ class BatterySystemManager:
         )
 
         self.controller.set_grid_charge(grid_charge)
-        self.controller.set_charging_power_rate(charge_rate)
+        soc = self.controller.get_battery_soc()
+        if strategic_intent == "IDLE" and soc is not None and soc <= self.battery_settings.min_soc:
+            self.controller.set_charging_power_rate(100)
+        else:
+            self.controller.set_charging_power_rate(charge_rate)
         self.controller.set_discharging_power_rate(discharge_rate)
 
         # Export limit: block all export when sell price is negative, otherwise disable.
@@ -2128,7 +2132,6 @@ class BatterySystemManager:
         if self.power_monitor:
             self.power_monitor.update_target_charging_power(charge_rate)
             if strategic_intent == "IDLE":
-                soc = self.controller.get_battery_soc()
                 goal_soc = soc if soc is not None else int(self.battery_settings.min_soc)
                 deadband_pct = int(self.battery_settings.idle_deadband_pct)
                 self.power_monitor.set_idle_context(goal_soc, deadband_pct)

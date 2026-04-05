@@ -232,25 +232,47 @@ class HomePowerMonitor:
         if soc is None:
             return
 
+        inverted = self._idle_goal_soc <= self.battery_settings.min_soc
+
         if self._idle_state == "NORMAL":
-            if soc < self._idle_goal_soc - self._idle_deadband_pct:
-                self._idle_state = "CHARGING"
-                logger.info(
-                    "IDLE: SOC %.0f%% below threshold %.0f%% — enabling charge",
-                    soc,
-                    self._idle_goal_soc - self._idle_deadband_pct,
-                )
-                self.controller.set_charging_power_rate(100)
+            if inverted:
+                if soc <= self._idle_goal_soc:
+                    self._idle_state = "CHARGING"
+                    logger.info(
+                        "IDLE inverted: SOC %.0f%% at or below goal %.0f%% — enabling charge",
+                        soc,
+                        self._idle_goal_soc,
+                    )
+                    self.controller.set_charging_power_rate(100)
+            else:
+                if soc <= self._idle_goal_soc - self._idle_deadband_pct:
+                    self._idle_state = "CHARGING"
+                    logger.info(
+                        "IDLE: SOC %.0f%% below threshold %.0f%% — enabling charge",
+                        soc,
+                        self._idle_goal_soc - self._idle_deadband_pct,
+                    )
+                    self.controller.set_charging_power_rate(100)
 
         elif self._idle_state == "CHARGING":
-            if soc >= self._idle_goal_soc:
-                self._idle_state = "NORMAL"
-                logger.info(
-                    "IDLE: SOC %.0f%% reached goal %.0f%% — disabling charge",
-                    soc,
-                    self._idle_goal_soc,
-                )
-                self.controller.set_charging_power_rate(0)
+            if inverted:
+                if soc >= self._idle_goal_soc + self._idle_deadband_pct:
+                    self._idle_state = "NORMAL"
+                    logger.info(
+                        "IDLE inverted: SOC %.0f%% reached goal+deadband %.0f%% — disabling charge",
+                        soc,
+                        self._idle_goal_soc + self._idle_deadband_pct,
+                    )
+                    self.controller.set_charging_power_rate(0)
+            else:
+                if soc >= self._idle_goal_soc:
+                    self._idle_state = "NORMAL"
+                    logger.info(
+                        "IDLE: SOC %.0f%% reached goal %.0f%% — disabling charge",
+                        soc,
+                        self._idle_goal_soc,
+                    )
+                    self.controller.set_charging_power_rate(0)
 
     def set_idle_context(self, goal_soc: float, deadband_pct: int) -> None:
         """Set IDLE state machine for the current 15-min period.
@@ -263,11 +285,12 @@ class HomePowerMonitor:
         """
         self._idle_goal_soc = goal_soc
         self._idle_deadband_pct = deadband_pct
-        self._idle_state = "NORMAL"
+        self._idle_state = "CHARGING" if goal_soc <= self.battery_settings.min_soc else "NORMAL"
         logger.debug(
-            "IDLE context set: goal_soc=%d%%, deadband=%d%%",
+            "IDLE context set: goal_soc=%d%%, deadband=%d%%, state=%s",
             goal_soc,
             deadband_pct,
+            self._idle_state,
         )
 
     def clear_idle_context(self) -> None:

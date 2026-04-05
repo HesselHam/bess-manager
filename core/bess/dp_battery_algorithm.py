@@ -632,9 +632,12 @@ def _run_dynamic_programming(
 
                 # IDLE requires solar >= consumption: blocked when there is no solar,
                 # or when solar cannot cover home load.
+                # Also blocked when sell_price < 0: solar surplus would flow to grid
+                # at a cost, identical to the EXPORT_ARBITRAGE guard.
                 if mode == "IDLE" and (
                     solar_production[t] <= 0.01
                     or solar_production[t] < home_consumption[t]
+                    or sell_price[t] < 0.0
                 ):
                     continue
 

@@ -5,6 +5,17 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.57] - 2026-04-05
+
+### Fixed
+
+- SOE display showing values above 100% (e.g. 100.7%) in the Decision Details table.
+  Root cause: the snapping formula used `min_soe + i × SOE_STEP_KWH` while
+  `_discretize_state_space` uses `linspace(min_soe, max_soe, n+1)`. When the usable
+  range is not an exact multiple of 0.1 kWh the two grids diverge, producing snapped
+  SOE values that exceed `max_soe_kwh`. Fixed by deriving the actual linspace step
+  (`range / n`) and adding a hard clamp as a floating-point safety net.
+
 ## [7.9.56] - 2026-04-05
 
 ### Added

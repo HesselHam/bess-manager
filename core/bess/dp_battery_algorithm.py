@@ -285,9 +285,17 @@ def _calculate_reward(
 
     # Snap next_soe to the DP grid so battery_soe_end matches battery_soe_start of the
     # next period exactly, eliminating the display gap caused by quantization rounding.
-    _max_i = round((battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
-    _snapped_i = min(max(0, round((next_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)), _max_i)
-    snapped_next_soe = battery_settings.min_soe_kwh + _snapped_i * SOE_STEP_KWH
+    # Use the linspace step (range / n) rather than the fixed SOE_STEP_KWH constant so
+    # the snapping grid matches _discretize_state_space exactly. Without this, batteries
+    # whose usable range is not an integer multiple of 0.1 kWh produce snapped values
+    # that exceed max_soe_kwh (e.g. display shows 100.7% instead of 100%).
+    _range = battery_settings.max_soe_kwh - battery_settings.min_soe_kwh
+    _n = round(_range / SOE_STEP_KWH)
+    _actual_step = _range / _n if _n > 0 else SOE_STEP_KWH
+    _snapped_i = min(max(0, round((next_soe - battery_settings.min_soe_kwh) / _actual_step)), _n)
+    snapped_next_soe = battery_settings.min_soe_kwh + _snapped_i * _actual_step
+    # Hard clamp: floating-point arithmetic can still exceed bounds by epsilon
+    snapped_next_soe = min(max(snapped_next_soe, battery_settings.min_soe_kwh), battery_settings.max_soe_kwh)
 
     energy_data = EnergyData(
         solar_production=solar_production,

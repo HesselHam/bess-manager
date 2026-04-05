@@ -336,9 +336,11 @@ class BatterySystemManager:
         try:
             # Apply current period settings immediately using the existing schedule so the
             # inverter is updated at the period boundary before optimization completes.
+            # BDC is deferred (write_bdc=False) to avoid spurious EEPROM writes when the
+            # stale schedule intent differs from the optimized result.
             # Skips silently on first run (no schedule yet).
             if not prepare_next_day:
-                self._apply_period_schedule(current_period)
+                self._apply_period_schedule(current_period, write_bdc=False)
 
             # Handle special cases (midnight, next day prep)
             self._handle_special_cases(current_period, prepare_next_day)
@@ -2037,12 +2039,19 @@ class BatterySystemManager:
                 )
         self._controller.set_inverter_time_segment(**inverter_params)
 
-    def _apply_period_schedule(self, period: int) -> None:
+    def _apply_period_schedule(self, period: int, *, write_bdc: bool = True) -> None:
         """Apply period settings by directly setting all inverter controls from plan.
 
         Dom instellen: every quarter, unconditionally set grid_charge, charge_rate,
         and discharge_rate directly from INTENT_TO_CONTROL. No comparison with
         previous state, no conditional logic.
+
+        Args:
+            period: The 15-minute period index to apply settings for.
+            write_bdc: When False (initial pre-optimization call), skip the BDC
+                transition write. BDC is deferred to the post-optimization call to
+                prevent spurious EEPROM writes when the intent changes between the
+                stale and fresh schedule.
         """
         if period >= len(self._schedule_manager.strategic_intents):
             logger.warning(
@@ -2114,8 +2123,10 @@ class BatterySystemManager:
 
         # BDC control: write only on transitions to avoid EEPROM wear.
         # _bdc_enabled=None at startup forces a write on the first period.
+        # Skipped on the initial pre-optimization call (write_bdc=False) to prevent
+        # spurious off/on writes when the stale schedule differs from the optimized one.
         bdc_should_be_enabled = strategic_intent != "HOLD"
-        if bdc_should_be_enabled != self._bdc_enabled:
+        if write_bdc and bdc_should_be_enabled != self._bdc_enabled:
             try:
                 self.controller.set_bdc_state(bdc_should_be_enabled)
                 self._bdc_enabled = bdc_should_be_enabled

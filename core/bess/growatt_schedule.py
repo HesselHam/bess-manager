@@ -106,9 +106,9 @@ class GrowattScheduleManager:
 
     # Map strategic intents to inverter control settings.
     # Rates are always 100% (dom instellen); the battery mode controls actual behavior.
-    # HOLD: charge=0%, discharge=0% — battery fully preserved.
+    # HOLD: charge=100%, discharge=100% — BDC isolates the battery hardware; rates are irrelevant.
     INTENT_TO_CONTROL: ClassVar[dict[str, dict[str, bool | int]]] = {
-        "HOLD": {"grid_charge": False, "charge_rate": 0, "discharge_rate": 0},
+        "HOLD": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
         "IDLE": {"grid_charge": False, "charge_rate": 0, "discharge_rate": 100},
         "LOAD_SUPPORT": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},
         "SOLAR_STORAGE": {"grid_charge": False, "charge_rate": 100, "discharge_rate": 100},

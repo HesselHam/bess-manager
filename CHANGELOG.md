@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.61] - 2026-04-07
+
+### Added
+
+- Diagnostic logging for dp_reward/dp_value at t=0 in both backward and forward
+  pass. Logs object identity (id) to confirm the forward pass retrieves the same
+  object the backward pass wrote to. Check logs for `Backward pass t=0 i=0` and
+  `Forward pass t=0 i=` after the next optimization run.
+
 ## [7.9.60] - 2026-04-07
 
 ### Fixed

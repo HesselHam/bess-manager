@@ -729,6 +729,13 @@ def _run_dynamic_programming(
             if best_period_data is not None:
                 best_period_data.decision.dp_reward = best_reward
                 best_period_data.decision.dp_value = best_value
+                if t == 0 and i == 0:
+                    logger.debug(
+                        "Backward pass t=0 i=0: dp_reward=%.4f dp_value=%.4f id=%d",
+                        best_reward,
+                        best_value,
+                        id(best_period_data),
+                    )
 
             # Propagate cost basis to next period
             if t + 1 < horizon:
@@ -1102,6 +1109,15 @@ def optimize_battery_schedule(
             )
 
         period_data = stored_period_data[(t, i)]
+        if t == 0:
+            logger.debug(
+                "Forward pass t=0 i=%d: dp_reward=%.4f dp_value=%.4f intent=%s id=%d",
+                i,
+                period_data.decision.dp_reward if period_data else float("nan"),
+                period_data.decision.dp_value if period_data else float("nan"),
+                period_data.decision.strategic_intent if period_data else "None",
+                id(period_data) if period_data else 0,
+            )
         hourly_results.append(period_data)
         current_soe = period_data.energy.battery_soe_end
 

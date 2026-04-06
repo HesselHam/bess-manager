@@ -5,6 +5,22 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.60] - 2026-04-07
+
+### Fixed
+
+- Reward and V[t,i] columns in Decision Details always showing 0.0000. Two causes:
+  1. Forward pass state-index used `SOE_STEP_KWH` (0.1 kWh fixed step) while the
+     backward pass stores results under indices derived from `linspace`. When the
+     usable SOE range is not an exact multiple of 0.1 kWh the two grids diverge,
+     causing the forward pass to retrieve a different PeriodData object than the one
+     the backward pass wrote `dp_reward`/`dp_value` onto. Fixed: forward pass now
+     uses the same `range / n` linspace step as the backward pass.
+  2. `dp_reward` and `dp_value` were not included in `_period_data_to_dict` /
+     `_period_data_from_dict`, so they were lost on every persist/reload cycle.
+     Added to both serialization functions with `get(..., 0.0)` fallback for
+     backward compatibility with existing store files.
+
 ## [7.9.59] - 2026-04-06
 
 ### Fixed

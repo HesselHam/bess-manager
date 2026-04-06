@@ -1077,9 +1077,21 @@ def optimize_battery_schedule(
     current_soe = initial_soe
     soe_levels = _discretize_state_space(battery_settings)
 
+    # Use the actual linspace step to match the backward pass index calculation.
+    # SOE_STEP_KWH (0.1) diverges from the linspace step when the usable range
+    # is not an exact multiple of 0.1 kWh, causing the forward pass to look up
+    # a different (t, i) key than what the backward pass stored, resulting in
+    # dp_reward/dp_value always being 0.
+    _n_states = len(soe_levels) - 1
+    _actual_step = (
+        (battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / _n_states
+        if _n_states > 0
+        else SOE_STEP_KWH
+    )
+
     for t in range(horizon):
-        # Find current state index (same logic as simulation)
-        i = round((current_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
+        # Find current state index using the same step as the backward pass
+        i = round((current_soe - battery_settings.min_soe_kwh) / _actual_step)
         i = min(max(0, i), len(soe_levels) - 1)
 
         # Get the PeriodData from DP results - should always exist with valid inputs

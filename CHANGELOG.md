@@ -5,30 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.9.61] - 2026-04-07
-
-### Added
-
-- Diagnostic logging for dp_reward/dp_value at t=0 in both backward and forward
-  pass. Logs object identity (id) to confirm the forward pass retrieves the same
-  object the backward pass wrote to. Check logs for `Backward pass t=0 i=0` and
-  `Forward pass t=0 i=` after the next optimization run.
-
-## [7.9.60] - 2026-04-07
+## [7.9.62] - 2026-04-07
 
 ### Fixed
 
-- Reward and V[t,i] columns in Decision Details always showing 0.0000. Two causes:
-  1. Forward pass state-index used `SOE_STEP_KWH` (0.1 kWh fixed step) while the
-     backward pass stores results under indices derived from `linspace`. When the
-     usable SOE range is not an exact multiple of 0.1 kWh the two grids diverge,
-     causing the forward pass to retrieve a different PeriodData object than the one
-     the backward pass wrote `dp_reward`/`dp_value` onto. Fixed: forward pass now
-     uses the same `range / n` linspace step as the backward pass.
-  2. `dp_reward` and `dp_value` were not included in `_period_data_to_dict` /
-     `_period_data_from_dict`, so they were lost on every persist/reload cycle.
-     Added to both serialization functions with `get(..., 0.0)` fallback for
-     backward compatibility with existing store files.
+- Reward and V[t,i] columns showing 0.0000 when `export_postprocess_reorder` is
+  enabled. The post-processing step creates new `PeriodData` objects via
+  `_calculate_reward`; these default to `dp_reward=0.0` and `dp_value=0.0`.
+  Fixed by copying the original DP diagnostics onto the replacement object.
 
 ## [7.9.59] - 2026-04-06
 

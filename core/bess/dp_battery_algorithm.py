@@ -729,13 +729,6 @@ def _run_dynamic_programming(
             if best_period_data is not None:
                 best_period_data.decision.dp_reward = best_reward
                 best_period_data.decision.dp_value = best_value
-                if t == 0 and i == 0:
-                    logger.debug(
-                        "Backward pass t=0 i=0: dp_reward=%.4f dp_value=%.4f id=%d",
-                        best_reward,
-                        best_value,
-                        id(best_period_data),
-                    )
 
             # Propagate cost basis to next period
             if t + 1 < horizon:
@@ -979,6 +972,12 @@ def _postprocess_export_reorder(
             if new_mode != original_mode:
                 changed = True
 
+            # Preserve DP diagnostics: new period_data from _calculate_reward has
+            # dp_reward/dp_value = 0.0 (default). Copy from the original object.
+            original = hourly_results[period]
+            period_data.decision.dp_reward = original.decision.dp_reward
+            period_data.decision.dp_value = original.decision.dp_value
+
             result[period] = period_data
             soe = next_soe
             cost_basis = new_cost_basis
@@ -1084,21 +1083,9 @@ def optimize_battery_schedule(
     current_soe = initial_soe
     soe_levels = _discretize_state_space(battery_settings)
 
-    # Use the actual linspace step to match the backward pass index calculation.
-    # SOE_STEP_KWH (0.1) diverges from the linspace step when the usable range
-    # is not an exact multiple of 0.1 kWh, causing the forward pass to look up
-    # a different (t, i) key than what the backward pass stored, resulting in
-    # dp_reward/dp_value always being 0.
-    _n_states = len(soe_levels) - 1
-    _actual_step = (
-        (battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / _n_states
-        if _n_states > 0
-        else SOE_STEP_KWH
-    )
-
     for t in range(horizon):
-        # Find current state index using the same step as the backward pass
-        i = round((current_soe - battery_settings.min_soe_kwh) / _actual_step)
+        # Find current state index (same logic as simulation)
+        i = round((current_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
         i = min(max(0, i), len(soe_levels) - 1)
 
         # Get the PeriodData from DP results - should always exist with valid inputs
@@ -1109,15 +1096,6 @@ def optimize_battery_schedule(
             )
 
         period_data = stored_period_data[(t, i)]
-        if t == 0:
-            logger.debug(
-                "Forward pass t=0 i=%d: dp_reward=%.4f dp_value=%.4f intent=%s id=%d",
-                i,
-                period_data.decision.dp_reward if period_data else float("nan"),
-                period_data.decision.dp_value if period_data else float("nan"),
-                period_data.decision.strategic_intent if period_data else "None",
-                id(period_data) if period_data else 0,
-            )
         hourly_results.append(period_data)
         current_soe = period_data.energy.battery_soe_end
 

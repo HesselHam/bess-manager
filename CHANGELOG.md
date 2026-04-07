@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.67] - 2026-04-07
+
+### Fixed
+
+- Solar forecast correction: strip `sensor.` domain prefix from entity IDs before querying
+  InfluxDB. InfluxDB 1.x stores the short entity ID (e.g. `growatt_modbus_today_s_solar_energy`)
+  without the domain, so queries with the full `sensor.foo` form returned no data and correction
+  was never applied.
+
 ## [7.9.66] - 2026-04-07
 
 ### Added

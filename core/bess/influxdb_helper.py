@@ -1084,7 +1084,14 @@ def get_daily_solar_pairs(
     Raises:
         requests.RequestException: On InfluxDB connection failure.
     """
-    from datetime import date, timezone as tz
+    from datetime import timezone as tz
+
+    # Strip domain prefix (e.g. "sensor.foo" → "foo") — InfluxDB 1.x stores short entity_id
+    def _strip_domain(entity_id: str) -> str:
+        return entity_id.split(".", 1)[1] if "." in entity_id else entity_id
+
+    actual_entity = _strip_domain(actual_entity)
+    forecast_entity = _strip_domain(forecast_entity)
 
     influxdb_config = get_influxdb_config()
     url = influxdb_config["url"]

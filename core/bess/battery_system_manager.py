@@ -1296,16 +1296,17 @@ class BatterySystemManager:
         # Each day (today / tomorrow / buffer) gets its own factor based on
         # its Solcast forecast total via the fitted regression line.
         if self.solar_correction.enabled:
-            _forecast_today = self.controller.get_solar_forecast()
-            F_today = sum(_forecast_today)
+            # Use the sensor state (daily kWh total) as F — same measure as the
+            # InfluxDB first(value) used in the regression. sum(detailedHourly) can
+            # differ from the sensor state due to timezone boundaries.
+            F_today = self.controller._get_sensor_value("solar_forecast_today") or 0.0
             effective_today = self._compute_solar_correction(F_today)
 
             effective_tomorrow = 1.0
             effective_buffer = 1.0
             if period_count > 96:
                 try:
-                    _forecast_tomorrow = self.controller.get_solar_forecast_tomorrow()
-                    F_tomorrow = sum(_forecast_tomorrow)
+                    F_tomorrow = self.controller._get_sensor_value("solar_forecast_tomorrow") or 0.0
                     effective_tomorrow = self._compute_solar_correction(F_tomorrow)
                     # Buffer day (day 3) uses same correction as tomorrow
                     effective_buffer = effective_tomorrow

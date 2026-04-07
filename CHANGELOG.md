@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.68] - 2026-04-07
+
+### Fixed
+
+- Solar forecast correction: use sensor state (daily kWh total) as F input to the regression
+  instead of `sum(detailedHourly)`. The regression is trained on the sensor state value stored
+  in InfluxDB; using the sum of hourly periods produced a different number due to timezone
+  boundary differences, causing the correction factor to deviate from the expected value.
+
 ## [7.9.67] - 2026-04-07
 
 ### Fixed

@@ -885,24 +885,8 @@ def _postprocess_export_reorder(
             initial_cost_basis if window_start == 0 else result[window_start - 1].decision.cost_basis
         )
 
-        # Sort by actual export revenue (grid_exported × sell_price) rather than
-        # sell_price alone. Solar surplus and home consumption both affect how much
-        # of the battery discharge reaches the grid, so periods with high solar
-        # earn more even at the same price.  Use window-start SOE for all periods
-        # as an approximation — sufficient because all candidate periods have
-        # available_soe >= min_export_soe (same max_discharge applies to each).
-        def _export_revenue(p: int) -> float:
-            _, _, _, grid_exported, _ = _calculate_mode_energy_flows(
-                mode="EXPORT_ARBITRAGE",
-                soe=soe,
-                solar=solar_production[p],
-                consumption=home_consumption[p],
-                battery_settings=battery_settings,
-                dt=dt,
-            )
-            return grid_exported * sell_price[p]
-
-        target_export = set(sorted(window, key=_export_revenue, reverse=True)[:k])
+        # Sort by sell_price — highest price gets the export slot.
+        target_export = set(sorted(window, key=lambda p: sell_price[p], reverse=True)[:k])
 
         if target_export == export_periods:
             continue  # Already at highest-reward periods — nothing to do

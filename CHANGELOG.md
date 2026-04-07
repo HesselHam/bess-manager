@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.65] - 2026-04-07
+
+### Fixed
+
+- `export_postprocess_reorder` sorted export slots by `grid_exported × sell_price`
+  using window-start SOE as approximation for all periods. This gave wrong results
+  when solar differs per period — low-solar periods got higher grid_exported and
+  could outscore higher-priced periods. Simplified to sort by `sell_price` only:
+  highest price always gets the export slot.
+
 ## [7.9.64] - 2026-04-07
 
 ### Fixed

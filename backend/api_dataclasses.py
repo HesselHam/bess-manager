@@ -167,6 +167,47 @@ class APIPriceSettings:
 
 
 @dataclass
+class APISolarCorrectionSettings:
+    """Solar forecast bias correction settings (camelCase API format)."""
+
+    enabled: bool
+    actualSolarEntity: str
+    forecastSolarEntity: str
+    lookbackDays: int
+    minForecastKwh: float
+    correctionStrength: float
+    clipMin: float
+    clipMax: float
+
+    @classmethod
+    def from_internal(cls, sc) -> "APISolarCorrectionSettings":
+        """Convert from internal SolarForecastCorrectionSettings to camelCase API."""
+        return cls(
+            enabled=sc.enabled,
+            actualSolarEntity=sc.actual_solar_entity,
+            forecastSolarEntity=sc.forecast_solar_entity,
+            lookbackDays=sc.lookback_days,
+            minForecastKwh=sc.min_forecast_kwh,
+            correctionStrength=sc.correction_strength,
+            clipMin=sc.clip_min,
+            clipMax=sc.clip_max,
+        )
+
+    def to_internal_update(self) -> dict:
+        """Convert to snake_case dict for applying to SolarForecastCorrectionSettings."""
+        return {
+            "enabled": self.enabled,
+            "actual_solar_entity": self.actualSolarEntity,
+            "forecast_solar_entity": self.forecastSolarEntity,
+            "lookback_days": self.lookbackDays,
+            "min_forecast_kwh": self.minForecastKwh,
+            "correction_strength": self.correctionStrength,
+            "clip_min": self.clipMin,
+            "clip_max": self.clipMax,
+        }
+
+
+@dataclass
 class APIPredictionSnapshot:
     """API representation of PredictionSnapshot."""
 

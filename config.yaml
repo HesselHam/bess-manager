@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.65"
+version: "7.9.66"
 slug: "bess_manager"
 init: false
 arch:
@@ -54,6 +54,15 @@ options:
     export_limit_simulation: true            # When true: DP and UI reflect export blocking, but inverter is not written
     export_look_ahead_guard: false           # Block EXPORT if next period has strictly higher sell price (simple heuristic)
     export_postprocess_reorder: false        # After DP: reassign EXPORT to highest-price periods in each sell window (robust fix)
+    solar_forecast_correction:
+      enabled: false
+      actual_solar_entity: ""     # Daily reset kWh sensor (e.g. sensor.growatt_modbus_today_s_solar_energy)
+      forecast_solar_entity: ""   # Solcast daily forecast sensor (e.g. sensor.solcast_pv_forecast_forecast_today)
+      lookback_days: 14           # Number of completed days to use for regression
+      min_forecast_kwh: 3.0       # Minimum daily forecast (kWh) to apply correction
+      correction_strength: 1.0    # 0.0–1.0 blend: 0 = no correction, 1 = full correction
+      clip_min: 0.7               # Maximum downward correction (70% of forecast)
+      clip_max: 1.5               # Maximum upward correction (150% of forecast)
     temperature_derating:
       enabled: false  # Enable for outdoor batteries affected by cold weather
       weather_entity: ""  # HA weather entity for forecast (e.g. "weather.forecast_home")
@@ -160,6 +169,15 @@ schema:
     export_limit_simulation: bool?
     export_look_ahead_guard: bool?
     export_postprocess_reorder: bool?
+    solar_forecast_correction:
+      enabled: bool?
+      actual_solar_entity: str?
+      forecast_solar_entity: str?
+      lookback_days: int?
+      min_forecast_kwh: float?
+      correction_strength: float?
+      clip_min: float?
+      clip_max: float?
     temperature_derating:
       enabled: bool?
       weather_entity: str?

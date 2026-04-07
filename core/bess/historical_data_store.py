@@ -60,6 +60,7 @@ def _period_data_to_dict(pd: PeriodData) -> dict:
             "advanced_flow_pattern": pd.decision.advanced_flow_pattern,
             "detailed_flow_values": pd.decision.detailed_flow_values,
             "future_target_hours": pd.decision.future_target_hours,
+            "solar_correction_factor": pd.decision.solar_correction_factor,
         },
     }
 
@@ -107,6 +108,7 @@ def _period_data_from_dict(d: dict) -> PeriodData:
             advanced_flow_pattern=dec.get("advanced_flow_pattern", ""),
             detailed_flow_values=dec.get("detailed_flow_values", {}),
             future_target_hours=dec.get("future_target_hours", []),
+            solar_correction_factor=dec.get("solar_correction_factor", 1.0),
         ),
     )
 

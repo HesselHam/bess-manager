@@ -5,6 +5,17 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.66] - 2026-04-07
+
+### Added
+
+- Solar forecast bias correction: applies a forecast-level-dependent correction to Solcast
+  predictions based on linear regression over historical daily totals. A day forecast at
+  10 kWh gets a different correction factor than one at 25 kWh, matching the observed
+  Solcast bias pattern for the installation. Correction factor visible in Decision Details
+  table (☀ corr. column). Configurable via new "Solar Forecast Correction" settings card
+  on the Inverter page. Feature disabled by default.
+
 ## [7.9.65] - 2026-04-07
 
 ### Fixed

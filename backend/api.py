@@ -12,6 +12,7 @@ from api_dataclasses import (
     APIDashboardResponse,
     APIPredictionSnapshot,
     APIPriceSettings,
+    APISolarCorrectionSettings,
     APISnapshotComparison,
     create_formatted_value,
 )
@@ -93,6 +94,38 @@ async def update_electricity_price_settings(settings: dict):
 
     except Exception as e:
         logger.error(f"Error updating electricity settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/api/settings/solar-correction")
+async def get_solar_correction_settings():
+    """Get solar forecast bias correction settings."""
+    from app import bess_controller
+
+    try:
+        sc = bess_controller.system.solar_correction
+        return APISolarCorrectionSettings.from_internal(sc).__dict__
+    except Exception as e:
+        logger.error(f"Error getting solar correction settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/api/settings/solar-correction")
+async def update_solar_correction_settings(settings: dict):
+    """Update solar forecast bias correction settings."""
+    from app import bess_controller
+
+    try:
+        api_sc = APISolarCorrectionSettings(**settings)
+        updates = api_sc.to_internal_update()
+        sc = bess_controller.system.solar_correction
+        for key, value in updates.items():
+            setattr(sc, key, value)
+        # Invalidate regression cache so next run re-queries InfluxDB
+        bess_controller.system._solar_correction_cache = None
+        return {"message": "Solar correction settings updated successfully"}
+    except Exception as e:
+        logger.error(f"Error updating solar correction settings: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -1553,6 +1586,7 @@ async def get_period_details():
                 "actualDischargeRate": round(actual_discharge_rate, 1) if actual_discharge_rate is not None else None,
                 "dpReward": round(planned.decision.dp_reward, 4) if planned is not None else None,
                 "dpValue": round(planned.decision.dp_value, 4) if planned is not None else None,
+                "solarCorrectionFactor": round(planned.decision.solar_correction_factor, 3) if planned is not None else 1.0,
             }
 
         periods = []
@@ -1655,6 +1689,7 @@ async def get_period_details():
                 "actualDischargeRate": round(actual_discharge_rate, 1) if actual_discharge_rate is not None else None,
                 "dpReward": round(period_data.decision.dp_reward, 4),
                 "dpValue": round(period_data.decision.dp_value, 4),
+                "solarCorrectionFactor": round(period_data.decision.solar_correction_factor, 3),
             }
             periods.append(entry)
 

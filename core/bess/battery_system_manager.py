@@ -42,6 +42,7 @@ from .settings import (
     BatterySettings,
     HomeSettings,
     PriceSettings,
+    SolarForecastCorrectionSettings,
     TemperatureDeratingSettings,
     apply_temperature_derating,
 )
@@ -86,6 +87,11 @@ class BatterySystemManager:
         # Initialize temperature derating (opt-in, disabled by default)
         self.temperature_derating = TemperatureDeratingSettings()
         self.temperature_derating.from_ha_config(self._addon_options)
+
+        # Initialize solar forecast bias correction (opt-in, disabled by default)
+        self.solar_correction = SolarForecastCorrectionSettings()
+        self.solar_correction.from_ha_config(self._addon_options)
+        self._solar_correction_cache: tuple | None = None  # (date, alpha, beta)
 
         # Store controller reference
         self._controller = controller
@@ -1285,12 +1291,52 @@ class BatterySystemManager:
         if not prepare_next_day:
             combined_soe[optimization_period] = current_soe
 
+        # Solar forecast bias correction: apply per-day regression factor to
+        # all future periods. Past periods (actuals) are never modified.
+        # Each day (today / tomorrow / buffer) gets its own factor based on
+        # its Solcast forecast total via the fitted regression line.
+        if self.solar_correction.enabled:
+            _forecast_today = self.controller.get_solar_forecast()
+            F_today = sum(_forecast_today)
+            effective_today = self._compute_solar_correction(F_today)
+
+            effective_tomorrow = 1.0
+            effective_buffer = 1.0
+            if period_count > 96:
+                try:
+                    _forecast_tomorrow = self.controller.get_solar_forecast_tomorrow()
+                    F_tomorrow = sum(_forecast_tomorrow)
+                    effective_tomorrow = self._compute_solar_correction(F_tomorrow)
+                    # Buffer day (day 3) uses same correction as tomorrow
+                    effective_buffer = effective_tomorrow
+                except Exception:
+                    pass
+
+            opt_start = optimization_period if not prepare_next_day else 0
+            for t in range(opt_start, min(96, len(solar_data))):
+                solar_data[t] *= effective_today
+            for t in range(96, min(192, len(solar_data))):
+                solar_data[t] *= effective_tomorrow
+            for t in range(192, len(solar_data)):
+                solar_data[t] *= effective_buffer
+
+            logger.info(
+                "Solar correction applied: today=%.3f, tomorrow=%.3f",
+                effective_today,
+                effective_tomorrow,
+            )
+        else:
+            effective_today = 1.0
+            effective_tomorrow = 1.0
+
         optimization_data = {
             "full_consumption": consumption_data,
             "full_solar": solar_data,
             "combined_actions": combined_actions,
             "combined_soe": combined_soe,
             "solar_charged": solar_charged,
+            "solar_correction_today": effective_today,
+            "solar_correction_tomorrow": effective_tomorrow,
         }
 
         logger.debug(f"Optimization data prepared for period {optimization_period}")
@@ -1371,6 +1417,85 @@ class BatterySystemManager:
         )
 
         return derated_limits
+
+    def _compute_solar_correction(self, forecast_kwh: float) -> float:
+        """Return solar correction factor for a day with the given Solcast forecast total.
+
+        Uses linear regression (actual = alpha * forecast + beta) over completed days
+        to derive a forecast-level-dependent correction factor. A day forecast at 10 kWh
+        gets a different correction than one at 25 kWh.
+
+        Results are cached per calendar day; InfluxDB is only queried once per day.
+        Returns 1.0 (no correction) when disabled, data is insufficient, or on error.
+
+        Args:
+            forecast_kwh: Total Solcast forecast for the day (sum of 96 periods).
+
+        Returns:
+            Effective correction factor to multiply solar_data periods by.
+        """
+        from datetime import date as _date
+
+        from .influxdb_helper import get_daily_solar_pairs
+
+        sc = self.solar_correction
+        if not sc.enabled or not sc.actual_solar_entity or not sc.forecast_solar_entity:
+            return 1.0
+        if forecast_kwh < sc.min_forecast_kwh:
+            return 1.0
+
+        today = _date.today()
+        if self._solar_correction_cache and self._solar_correction_cache[0] == today:
+            alpha, beta = self._solar_correction_cache[1], self._solar_correction_cache[2]
+        else:
+            try:
+                pairs = get_daily_solar_pairs(
+                    actual_entity=sc.actual_solar_entity,
+                    forecast_entity=sc.forecast_solar_entity,
+                    lookback_days=sc.lookback_days,
+                )
+            except Exception:
+                logger.warning(
+                    "Solar correction: InfluxDB query failed, skipping correction"
+                )
+                return 1.0
+
+            if len(pairs) < 3:
+                logger.info(
+                    "Solar correction: insufficient data (%d completed days), skipping",
+                    len(pairs),
+                )
+                return 1.0
+
+            n = len(pairs)
+            mean_f = sum(f for f, _ in pairs) / n
+            mean_a = sum(a for _, a in pairs) / n
+            cov = sum((f - mean_f) * (a - mean_a) for f, a in pairs)
+            var = sum((f - mean_f) ** 2 for f, a in pairs)
+            if var < 1e-6:
+                logger.info("Solar correction: no variance in forecast data, skipping")
+                return 1.0
+            alpha = cov / var
+            beta = mean_a - alpha * mean_f
+            self._solar_correction_cache = (today, alpha, beta)
+            logger.info(
+                "Solar correction: regression from %d days: α=%.4f β=%.4f kWh",
+                n,
+                alpha,
+                beta,
+            )
+
+        ratio = alpha + beta / forecast_kwh
+        ratio = min(max(ratio, sc.clip_min), sc.clip_max)
+        effective = 1.0 + (ratio - 1.0) * sc.correction_strength
+
+        logger.debug(
+            "Solar correction: F=%.1f kWh → ratio=%.3f → effective=%.3f",
+            forecast_kwh,
+            ratio,
+            effective,
+        )
+        return effective
 
     def _run_optimization(
         self,
@@ -1458,6 +1583,13 @@ class BatterySystemManager:
 
             # Add timestamps to period data (algorithm is time-agnostic, operates on relative indices)
             self._add_timestamps_to_period_data(result, optimization_period)
+
+            # Store solar correction factor on each period for Decision Details display
+            correction_today = optimization_data.get("solar_correction_today", 1.0)
+            correction_tomorrow = optimization_data.get("solar_correction_tomorrow", 1.0)
+            for pd_item in result.period_data:
+                factor = correction_today if pd_item.period < 96 else correction_tomorrow
+                pd_item.decision.solar_correction_factor = factor
 
             # Print results table with strategic intents
             print_optimization_results(result, buy_prices, sell_prices)

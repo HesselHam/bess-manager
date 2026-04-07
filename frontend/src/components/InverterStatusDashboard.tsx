@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Battery, 
-  Zap, 
-  RefreshCw, 
-  Clock, 
-  Settings, 
+import {
+  Battery,
+  Zap,
+  RefreshCw,
+  Clock,
+  Settings,
   TrendingUp,
   Calendar,
   TrendingDown,
@@ -14,6 +14,7 @@ import {
   Sun
 } from 'lucide-react';
 import api from '../lib/api';
+import { SolarCorrectionSettings } from '../types';
 
 // FIXED: Updated interface to match actual API response
 interface InverterStatus {
@@ -132,6 +133,7 @@ interface PeriodDetail {
   actualDischargeRate: number | null;
   dpReward: number | null;
   dpValue: number | null;
+  solarCorrectionFactor: number | null;
 }
 
 interface PeriodDetailsResponse {
@@ -339,6 +341,8 @@ const InverterStatusDashboard: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [periodDetails, setPeriodDetails] = useState<PeriodDetailsResponse | null>(null);
   const [showPeriodDetails, setShowPeriodDetails] = useState(false);
+  const [solarCorrection, setSolarCorrection] = useState<SolarCorrectionSettings | null>(null);
+  const [solarCorrectionSaving, setSolarCorrectionSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
@@ -389,6 +393,27 @@ const InverterStatusDashboard: React.FC = () => {
     const response = await api.get('/api/period_details');
     return response.data;
   };
+
+  const fetchSolarCorrection = async (): Promise<void> => {
+    try {
+      const response = await api.get('/api/settings/solar-correction');
+      setSolarCorrection(response.data);
+    } catch (err) {
+      console.warn('Failed to fetch solar correction settings:', err);
+    }
+  };
+
+  const saveSolarCorrection = async (): Promise<void> => {
+    if (!solarCorrection) return;
+    setSolarCorrectionSaving(true);
+    try {
+      await api.post('/api/settings/solar-correction', solarCorrection);
+    } catch (err) {
+      console.error('Failed to save solar correction settings:', err);
+    } finally {
+      setSolarCorrectionSaving(false);
+    }
+  };
   
   const loadData = async (isManualRefresh = false): Promise<void> => {
     try {
@@ -404,6 +429,11 @@ const InverterStatusDashboard: React.FC = () => {
         fetchDashboardData(),
         fetchPeriodDetails()
       ]);
+
+      // Load solar correction settings once on initial load
+      if (isInitialLoad || isManualRefresh) {
+        fetchSolarCorrection();
+      }
 
       if (results[0].status === 'fulfilled') {
         setInverterStatus(results[0].value);
@@ -994,6 +1024,7 @@ const InverterStatusDashboard: React.FC = () => {
                       {/* DP diagnostics */}
                       <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP reward voor gekozen actie: -(grid_import×inkoop − grid_export×verkoop + wear)">Reward</th>
                       <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP waarde functie V[t,i] = reward + V[t+1, next_i]">V[t,i]</th>
+                      <th className="px-2 py-2 text-right font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap" title="Solar forecast correctiefactor toegepast op Solcast voor deze DP-run">☀ corr.</th>
                     </tr>
                     <tr className="text-gray-400 dark:text-gray-500">
                       <td className="px-2 pb-1"></td>
@@ -1118,6 +1149,9 @@ const InverterStatusDashboard: React.FC = () => {
                             <td className="px-2 py-1 text-right font-mono text-indigo-600 dark:text-indigo-400">
                               {p.dpValue != null ? p.dpValue.toFixed(4) : '—'}
                             </td>
+                            <td className={`px-2 py-1 text-right font-mono ${p.solarCorrectionFactor != null && p.solarCorrectionFactor !== 1 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'}`}>
+                              {p.solarCorrectionFactor != null ? p.solarCorrectionFactor.toFixed(3) : '1.000'}
+                            </td>
                           </tr>
                         );
                       });
@@ -1214,6 +1248,109 @@ const InverterStatusDashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Solar Forecast Correction Settings */}
+      {solarCorrection && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-amber-200 dark:border-amber-700">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center">
+                <Sun className="h-5 w-5 text-amber-500 mr-2" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Solar Forecast Correction</h3>
+              </div>
+              <label className="flex items-center cursor-pointer">
+                <span className="mr-2 text-sm text-gray-600 dark:text-gray-400">Enabled</span>
+                <input
+                  type="checkbox"
+                  checked={solarCorrection.enabled}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, enabled: e.target.checked })}
+                  className="w-4 h-4 accent-amber-500"
+                />
+              </label>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Corrects Solcast bias using linear regression over historical daily totals.
+              Low-forecast days and high-forecast days each get their own correction factor.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Actual solar entity</label>
+                <input
+                  type="text"
+                  value={solarCorrection.actualSolarEntity}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, actualSolarEntity: e.target.value })}
+                  placeholder="e.g. growatt_modbus_today_s_solar_energy"
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Solcast forecast entity</label>
+                <input
+                  type="text"
+                  value={solarCorrection.forecastSolarEntity}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, forecastSolarEntity: e.target.value })}
+                  placeholder="e.g. solcast_pv_forecast_forecast_today"
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Lookback days</label>
+                <input
+                  type="number" min={3} max={30}
+                  value={solarCorrection.lookbackDays}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, lookbackDays: Number(e.target.value) })}
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Min forecast (kWh)</label>
+                <input
+                  type="number" min={0} max={10} step={0.5}
+                  value={solarCorrection.minForecastKwh}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, minForecastKwh: Number(e.target.value) })}
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Correction strength (0–1)</label>
+                <input
+                  type="number" min={0} max={1} step={0.1}
+                  value={solarCorrection.correctionStrength}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, correctionStrength: Number(e.target.value) })}
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Clip min (max downward)</label>
+                <input
+                  type="number" min={0.3} max={1.0} step={0.05}
+                  value={solarCorrection.clipMin}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, clipMin: Number(e.target.value) })}
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Clip max (max upward)</label>
+                <input
+                  type="number" min={1.0} max={2.0} step={0.05}
+                  value={solarCorrection.clipMax}
+                  onChange={e => setSolarCorrection({ ...solarCorrection, clipMax: Number(e.target.value) })}
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={saveSolarCorrection}
+                disabled={solarCorrectionSaving}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {solarCorrectionSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

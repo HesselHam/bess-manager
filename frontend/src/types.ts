@@ -129,6 +129,17 @@ export interface ElectricitySettings {
   area: string;
 }
 
+export interface SolarCorrectionSettings {
+  enabled: boolean;
+  actualSolarEntity: string;
+  forecastSolarEntity: string;
+  lookbackDays: number;
+  minForecastKwh: number;
+  correctionStrength: number;
+  clipMin: number;
+  clipMax: number;
+}
+
 export interface ScheduleData {
   hourlyData: HourlyData[];
   summary: ScheduleSummary;

@@ -297,6 +297,9 @@ class DecisionData:
     dp_reward: float = 0.0  # Per-period reward for chosen action (= immediate + future value)
     dp_value: float = 0.0  # DP value function V[t,i] = dp_reward + V[t+1, next_i]
 
+    # Solar forecast bias correction factor applied to Solcast before this DP run
+    solar_correction_factor: float = 1.0
+
     # Simple enhanced fields that we can actually implement
     advanced_flow_pattern: str = (
         ""  # Detailed flow pattern (e.g., SOLAR_TO_HOME_AND_BATTERY)

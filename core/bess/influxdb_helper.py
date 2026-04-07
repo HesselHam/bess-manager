@@ -1058,3 +1058,90 @@ def _parse_avg_batch_response(
     )
 
     return period_data
+
+
+def get_daily_solar_pairs(
+    actual_entity: str,
+    forecast_entity: str,
+    lookback_days: int,
+) -> list[tuple[float, float]]:
+    """Fetch completed daily solar totals for linear regression.
+
+    Returns a list of (forecast_kwh, actual_kwh) tuples for completed days only.
+    Today is never included. Uses max() for actual (daily reset sensor peak value
+    at end of day) and first() for forecast (Solcast morning value before updates).
+
+    Both sensors must store kWh values in InfluxDB.
+
+    Args:
+        actual_entity: InfluxDB entity_id of the daily reset solar sensor.
+        forecast_entity: InfluxDB entity_id of the Solcast daily forecast sensor.
+        lookback_days: Number of past days to query.
+
+    Returns:
+        List of (forecast_kwh, actual_kwh) tuples for days with valid data.
+
+    Raises:
+        requests.RequestException: On InfluxDB connection failure.
+    """
+    from datetime import date, timezone as tz
+
+    influxdb_config = get_influxdb_config()
+    url = influxdb_config["url"]
+    username = influxdb_config["username"]
+    password = influxdb_config["password"]
+
+    # Exclude today — only completed days
+    today_midnight_utc = (
+        datetime.now(tz.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+
+    def _query_daily(entity: str, agg: str) -> dict[str, float]:
+        """Query daily aggregated values for an entity. Returns {date_str: value}."""
+        q = (
+            f"SELECT {agg}(value) FROM \"kWh\" "
+            f"WHERE entity_id='{entity}' "
+            f"AND time > now()-{lookback_days + 1}d AND time < '{today_midnight_utc}' "
+            f"GROUP BY time(1d)"
+        )
+        # Extract the base InfluxDB v1 URL (strip /api/v2/query if present)
+        base_url = url.split("/api/")[0]
+        resp = requests.get(
+            f"{base_url}/query",
+            params={"db": "homeassistant", "q": q},
+            auth=(username, password),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        result: dict[str, float] = {}
+        series = data.get("results", [{}])[0].get("series", [])
+        if not series:
+            return result
+        for time_str, value in series[0].get("values", []):
+            if value is not None:
+                # time_str like "2026-04-06T00:00:00Z" → date key "2026-04-06"
+                day_key = time_str[:10]
+                result[day_key] = float(value)
+        return result
+
+    actual_by_day = _query_daily(actual_entity, "max")
+    forecast_by_day = _query_daily(forecast_entity, "first")
+
+    pairs: list[tuple[float, float]] = []
+    for day in sorted(actual_by_day):
+        if day not in forecast_by_day:
+            continue
+        a = actual_by_day[day]
+        f = forecast_by_day[day]
+        if a > 0 and f > 0:
+            pairs.append((f, a))
+
+    _LOGGER.debug(
+        "Solar correction: found %d daily pairs over last %d days",
+        len(pairs),
+        lookback_days,
+    )
+    return pairs

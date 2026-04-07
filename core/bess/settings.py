@@ -285,6 +285,41 @@ class TemperatureDeratingSettings:
         return self
 
 
+@dataclass
+class SolarForecastCorrectionSettings:
+    """Bias correction for Solcast solar forecast using historical daily totals.
+
+    Fits a linear regression (actual = alpha * forecast + beta) on completed days
+    and applies a forecast-level-dependent correction factor to the DP solar input.
+    A low-forecast day (10 kWh) and a high-forecast day (25 kWh) each get their own
+    correction factor derived from how accurate Solcast has been at that production level.
+    """
+
+    enabled: bool = False
+    actual_solar_entity: str = ""    # Daily reset kWh sensor (e.g. growatt_modbus_today_s_solar_energy)
+    forecast_solar_entity: str = ""  # Solcast daily forecast sensor (e.g. solcast_pv_forecast_forecast_today)
+    lookback_days: int = 14          # Number of completed days to use for regression
+    min_forecast_kwh: float = 3.0   # Minimum daily forecast to apply correction
+    correction_strength: float = 1.0  # 0.0–1.0 blend: 0 = no correction, 1 = full correction
+    clip_min: float = 0.7           # Maximum downward correction (70% of forecast)
+    clip_max: float = 1.5           # Maximum upward correction (150% of forecast)
+
+    def from_ha_config(self, config: dict) -> "SolarForecastCorrectionSettings":
+        """Load from add-on config."""
+        battery_config = config.get("battery", {})
+        sc = battery_config.get("solar_forecast_correction", {})
+        if sc:
+            self.enabled = sc.get("enabled", False)
+            self.actual_solar_entity = sc.get("actual_solar_entity", "")
+            self.forecast_solar_entity = sc.get("forecast_solar_entity", "")
+            self.lookback_days = int(sc.get("lookback_days", 14))
+            self.min_forecast_kwh = float(sc.get("min_forecast_kwh", 3.0))
+            self.correction_strength = float(sc.get("correction_strength", 1.0))
+            self.clip_min = float(sc.get("clip_min", 0.7))
+            self.clip_max = float(sc.get("clip_max", 1.5))
+        return self
+
+
 def interpolate_derating(temperature: float, curve: list[tuple[float, float]]) -> float:
     """Interpolate the derating curve to get charge rate percentage for a temperature.
 

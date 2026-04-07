@@ -5,6 +5,18 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.63] - 2026-04-07
+
+### Fixed
+
+- `export_postprocess_reorder` created more EXPORT slots than originally planned.
+  Root cause: demoted EXPORT periods kept their original EXPORT_ARBITRAGE mode
+  instead of being replaced. Fixed with a swap map: demoted periods get the mode
+  of the period that replaced them (e.g. LOAD_SUPPORT↔EXPORT_ARBITRAGE swap).
+- `dp_reward` and `dp_value` after postprocessing now use the correct new reward
+  (computed with the actual new mode and SOE) plus V[t+1, next_i] from the
+  original V-matrix with the updated SOE trajectory. No extra backward pass needed.
+
 ## [7.9.62] - 2026-04-07
 
 ### Fixed

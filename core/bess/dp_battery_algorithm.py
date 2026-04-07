@@ -835,6 +835,8 @@ def _postprocess_export_reorder(
     initial_soe: float,
     initial_cost_basis: float,
     currency: str,
+    V: np.ndarray,
+    soe_levels: np.ndarray,
 ) -> list[PeriodData]:
     """Reorder EXPORT_ARBITRAGE within sell windows to prefer higher-priced periods.
 
@@ -905,13 +907,34 @@ def _postprocess_export_reorder(
         if target_export == export_periods:
             continue  # Already at highest-reward periods — nothing to do
 
+        # Swap map: demoted EXPORT periods get the mode of the period that replaced them.
+        demoted = sorted(export_periods - target_export)
+        promoted = sorted(target_export - export_periods)
+        demotion_mode: dict[int, str] = {
+            dem: result[prom].decision.strategic_intent
+            for dem, prom in zip(demoted, promoted)
+        }
+
+        # Linspace step for V-matrix index lookup (must match backward pass)
+        _n_states = len(soe_levels) - 1
+        _actual_step = (
+            (battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / _n_states
+            if _n_states > 0
+            else SOE_STEP_KWH
+        )
+
         changed = False
         for period in window:
             original_mode = result[period].decision.strategic_intent
-            new_mode = "EXPORT_ARBITRAGE" if period in target_export else original_mode
+            if period in target_export:
+                new_mode = "EXPORT_ARBITRAGE"
+            elif period in demotion_mode:
+                new_mode = demotion_mode[period]
+            else:
+                new_mode = original_mode
 
             if new_mode == "EXPORT_ARBITRAGE" and (soe - battery_settings.min_soe_kwh) < min_export_soe:
-                new_mode = original_mode  # Insufficient SOE after reordering — fall back
+                new_mode = demotion_mode.get(period, original_mode)  # Insufficient SOE — fall back to swap mode
 
             charge, discharge, imported, exported, next_soe = _calculate_mode_energy_flows(
                 mode=new_mode,
@@ -941,17 +964,18 @@ def _postprocess_export_reorder(
             )
 
             if reward == float("-inf"):
-                # Profitability check blocked the reordered EXPORT — fall back to original
+                # Profitability check blocked the reordered EXPORT — fall back to swap mode
+                fallback_mode = demotion_mode.get(period, original_mode)
                 charge, discharge, imported, exported, next_soe = _calculate_mode_energy_flows(
-                    mode=original_mode,
+                    mode=fallback_mode,
                     soe=soe,
                     solar=solar_production[period],
                     consumption=home_consumption[period],
                     battery_settings=battery_settings,
                     dt=dt,
                 )
-                _, new_cost_basis, period_data = _calculate_reward(
-                    mode=original_mode,
+                reward, new_cost_basis, period_data = _calculate_reward(
+                    mode=fallback_mode,
                     battery_charge=charge,
                     battery_discharge=discharge,
                     grid_imported=imported,
@@ -967,16 +991,21 @@ def _postprocess_export_reorder(
                     cost_basis=cost_basis,
                     currency=currency,
                 )
-                new_mode = original_mode
+                new_mode = fallback_mode
 
             if new_mode != original_mode:
                 changed = True
 
-            # Preserve DP diagnostics: new period_data from _calculate_reward has
-            # dp_reward/dp_value = 0.0 (default). Copy from the original object.
-            original = hourly_results[period]
-            period_data.decision.dp_reward = original.decision.dp_reward
-            period_data.decision.dp_value = original.decision.dp_value
+            # Recalculate dp_reward and dp_value using the original V-matrix.
+            # reward is correct for the new mode (just computed above).
+            # dp_value = reward + V[t+1, next_i] using updated SOE trajectory.
+            period_data.decision.dp_reward = reward if reward != float("-inf") else 0.0
+            if period + 1 < horizon:
+                next_i = round((next_soe - battery_settings.min_soe_kwh) / _actual_step)
+                next_i = min(max(0, next_i), _n_states)
+                period_data.decision.dp_value = period_data.decision.dp_reward + V[period + 1, next_i]
+            else:
+                period_data.decision.dp_value = period_data.decision.dp_reward
 
             result[period] = period_data
             soe = next_soe
@@ -1112,6 +1141,8 @@ def optimize_battery_schedule(
             initial_soe=initial_soe,
             initial_cost_basis=initial_cost_basis,
             currency=currency,
+            V=V,
+            soe_levels=soe_levels,
         )
 
     # Step 3: Calculate economic summary directly from PeriodData

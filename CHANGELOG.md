@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.64] - 2026-04-07
+
+### Fixed
+
+- Crash `name 'V' is not defined` when `export_postprocess_reorder` is enabled.
+  `_run_dynamic_programming` return value for V was discarded with `_`; fixed by
+  capturing it so it can be passed to `_postprocess_export_reorder`.
+
 ## [7.9.63] - 2026-04-07
 
 ### Fixed

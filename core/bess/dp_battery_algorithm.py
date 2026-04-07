@@ -1092,7 +1092,7 @@ def optimize_battery_schedule(
     )
 
     # Step 1: Run DP with PeriodData storage
-    _, _, _, stored_period_data = _run_dynamic_programming(
+    V, _, _, stored_period_data = _run_dynamic_programming(
         horizon=horizon,
         buy_price=buy_price,
         sell_price=sell_price,

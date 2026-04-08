@@ -1333,7 +1333,7 @@ class BatterySystemManager:
         # Round consumption to nearest 0.25 kWh grid before passing to DP.
         # Smooths out small forecast variations that would otherwise cause the
         # V-matrix to differentiate between effectively identical consumption levels.
-        _cons_step = 0.25
+        _cons_step = 0.025
         consumption_data = [
             round(c / _cons_step) * _cons_step for c in consumption_data
         ]

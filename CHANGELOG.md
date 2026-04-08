@@ -9,8 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- DP consumption input rounded to nearest 0.25 kWh before optimization.
-  Coarser grid than previous 0.025 kWh, using standard rounding instead of ceiling.
+- DP consumption input rounded to nearest 0.025 kWh before optimization (standard rounding, not ceiling).
 
 ## [7.9.71] - 2026-04-09
 

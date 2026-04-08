@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.74] - 2026-04-09
+
+### Changed
+
+- DP consumption rounding is now configurable: `consumption_rounding_enabled` (default false)
+  and `consumption_rounding_step` (default 0.025 kWh) in `home` config section.
+  Rounds up (ceiling) to the nearest step when enabled.
+
 ## [7.9.73] - 2026-04-09
 
 ### Changed

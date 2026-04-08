@@ -1330,13 +1330,12 @@ class BatterySystemManager:
             effective_today = 1.0
             effective_tomorrow = 1.0
 
-        # Round consumption to nearest 0.25 kWh grid before passing to DP.
-        # Smooths out small forecast variations that would otherwise cause the
-        # V-matrix to differentiate between effectively identical consumption levels.
-        _cons_step = 0.025
-        consumption_data = [
-            round(c / _cons_step) * _cons_step for c in consumption_data
-        ]
+        if self.home_settings.consumption_rounding_enabled:
+            import math
+            _cons_step = self.home_settings.consumption_rounding_step
+            consumption_data = [
+                math.ceil(c / _cons_step) * _cons_step for c in consumption_data
+            ]
 
         optimization_data = {
             "full_consumption": consumption_data,

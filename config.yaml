@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.73"
+version: "7.9.74"
 slug: "bess_manager"
 init: false
 arch:
@@ -37,6 +37,8 @@ options:
     safety_margin_factor: 0.95      # Safety margin for power calculations
     phase_count: 3                  # Number of electrical phases (1 for single-phase, 3 for three-phase)
     inverter_phase: "3"
+    consumption_rounding_enabled: false  # Round DP consumption input up to nearest step (true/false)
+    consumption_rounding_step: 0.025     # Rounding step in kWh (e.g. 0.025)
   battery:
     total_capacity: 7.5              # kWh
     min_soc: 10                      # Minimum state of charge (%) - synced to inverter on startup
@@ -153,6 +155,8 @@ schema:
     safety_margin_factor: float
     phase_count: int
     inverter_phase: str?
+    consumption_rounding_enabled: bool?
+    consumption_rounding_step: float?
   battery:
     total_capacity: float
     min_soc: float

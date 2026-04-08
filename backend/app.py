@@ -398,6 +398,8 @@ class BESSController:
                     "consumptionStrategy": home_config["consumption_strategy"],
                     "historyDays": home_config.get("history_days", 1),
                     "inverterPhase": home_config.get("inverter_phase", ""),
+                    "consumptionRoundingEnabled": home_config.get("consumption_rounding_enabled", False),
+                    "consumptionRoundingStep": home_config.get("consumption_rounding_step", 0.025),
                 },
                 "price": {
                     "area": electricity_price_config["area"],

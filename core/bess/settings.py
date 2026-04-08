@@ -206,6 +206,8 @@ class HomeSettings:
     consumption_strategy: str = "sensor"
     history_days: int = 1
     inverter_phase: str = ""
+    consumption_rounding_enabled: bool = False
+    consumption_rounding_step: float = 0.025
 
     def __post_init__(self):
         assert self.phase_count in (
@@ -216,6 +218,7 @@ class HomeSettings:
         assert self.inverter_phase in (
             "", "L1", "L2", "L3"
         ), f"inverter_phase must be '', 'L1', 'L2' or 'L3', got {self.inverter_phase}"
+        assert self.consumption_rounding_step > 0, f"consumption_rounding_step must be > 0, got {self.consumption_rounding_step}"
 
     def update(self, **kwargs: Any) -> None:
         """Update settings from dict."""
@@ -250,6 +253,8 @@ class HomeSettings:
             )
             self.history_days = home_config.get("history_days", 1)
             self.inverter_phase = home_config.get("inverter_phase", "")
+            self.consumption_rounding_enabled = home_config.get("consumption_rounding_enabled", False)
+            self.consumption_rounding_step = home_config.get("consumption_rounding_step", 0.025)
             self.__post_init__()
         return self
 

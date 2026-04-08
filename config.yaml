@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.69"
+version: "7.9.70"
 slug: "bess_manager"
 init: false
 arch:
@@ -54,6 +54,7 @@ options:
     export_limit_simulation: true            # When true: DP and UI reflect export blocking, but inverter is not written
     export_look_ahead_guard: false           # Block EXPORT if next period has strictly higher sell price (simple heuristic)
     export_postprocess_reorder: false        # After DP: reassign EXPORT to highest-price periods in each sell window (robust fix)
+    dp_soe_states: 100                       # Number of discrete SOE states in DP optimizer (higher = more accurate, more CPU)
     solar_forecast_correction:
       enabled: false
       actual_solar_entity: ""     # Daily reset kWh sensor (e.g. sensor.growatt_modbus_today_s_solar_energy)
@@ -169,6 +170,7 @@ schema:
     export_limit_simulation: bool?
     export_look_ahead_guard: bool?
     export_postprocess_reorder: bool?
+    dp_soe_states: int?
     solar_forecast_correction:
       enabled: bool?
       actual_solar_entity: str?

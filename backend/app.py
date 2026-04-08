@@ -386,6 +386,7 @@ class BESSController:
                     "exportLimitSimulation": battery_config.get("export_limit_simulation", True),
                     "exportLookAheadGuard": battery_config.get("export_look_ahead_guard", False),
                     "exportPostprocessReorder": battery_config.get("export_postprocess_reorder", False),
+                    "dpSoeStates": battery_config.get("dp_soe_states", 100),
                 },
                 "home": {
                     "defaultHourly": home_config["consumption"],

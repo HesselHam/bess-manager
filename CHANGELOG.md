@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.70] - 2026-04-09
+
+### Added
+
+- `battery.dp_soe_states` config option (default 100): controls the number of
+  discrete SOE states in the DP optimizer. Higher values improve accuracy at
+  the cost of proportionally more CPU time. Configurable per installation.
+
 ## [7.9.69] - 2026-04-09
 
 ### Fixed

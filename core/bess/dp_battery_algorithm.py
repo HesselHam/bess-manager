@@ -100,12 +100,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Algorithm parameters
-# Number of discrete SOE states. The actual step size is computed as
-# (max_soe - min_soe) / N_SOE_STATES so it is always consistent with the
-# linspace grid — eliminating the mismatch that arose when SOE_STEP_KWH=0.1
-# did not divide the usable range evenly (e.g. 6.75 kWh / 0.1 = 67.5 → 68
-# states with step 0.09926, but next_i was computed with 0.1).
-N_SOE_STATES = 100
+# The number of discrete SOE states is configured via battery_settings.dp_soe_states
+# (default 100, configurable in config.yaml as battery.dp_soe_states).
+# The actual step size is (max_soe - min_soe) / dp_soe_states — always consistent
+# with the linspace grid to avoid index mismatch in V-matrix lookups.
 
 # Discrete modes for battery control — replaces continuous power levels
 MODES = [
@@ -133,14 +131,16 @@ class StrategicIntent(Enum):
 def _discretize_state_space(battery_settings: BatterySettings) -> tuple[np.ndarray, float]:
     """Return discretized SOE levels and the actual step size for DP state space.
 
-    Uses N_SOE_STATES fixed divisions so the step size is always consistent
-    with the linspace grid. Returns both the levels array and the exact step,
-    which must be used for all next_i index calculations to avoid mismatch.
+    Uses battery_settings.dp_soe_states fixed divisions so the step size is
+    always consistent with the linspace grid. Returns both the levels array
+    and the exact step, which must be used for all next_i index calculations
+    to avoid mismatch.
     """
+    n = battery_settings.dp_soe_states
     soe_range = battery_settings.max_soe_kwh - battery_settings.min_soe_kwh
-    actual_step = soe_range / N_SOE_STATES
+    actual_step = soe_range / n
     soe_levels = np.round(
-        np.linspace(battery_settings.min_soe_kwh, battery_settings.max_soe_kwh, N_SOE_STATES + 1),
+        np.linspace(battery_settings.min_soe_kwh, battery_settings.max_soe_kwh, n + 1),
         decimals=6,
     )
     return soe_levels, actual_step
@@ -297,8 +297,8 @@ def _calculate_reward(
     # whose usable range is not an integer multiple of 0.1 kWh produce snapped values
     # that exceed max_soe_kwh (e.g. display shows 100.7% instead of 100%).
     _range = battery_settings.max_soe_kwh - battery_settings.min_soe_kwh
-    _actual_step = _range / N_SOE_STATES
-    _snapped_i = min(max(0, round((next_soe - battery_settings.min_soe_kwh) / _actual_step)), N_SOE_STATES)
+    _actual_step = _range / battery_settings.dp_soe_states
+    _snapped_i = min(max(0, round((next_soe - battery_settings.min_soe_kwh) / _actual_step)), battery_settings.dp_soe_states)
     snapped_next_soe = battery_settings.min_soe_kwh + _snapped_i * _actual_step
     # Hard clamp: floating-point arithmetic can still exceed bounds by epsilon
     snapped_next_soe = min(max(snapped_next_soe, battery_settings.min_soe_kwh), battery_settings.max_soe_kwh)
@@ -906,7 +906,7 @@ def _postprocess_export_reorder(
         }
 
         # Step size for V-matrix index lookup (must match backward pass)
-        _actual_step = (battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / N_SOE_STATES
+        _actual_step = (battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / battery_settings.dp_soe_states
 
         changed = False
         for period in window:

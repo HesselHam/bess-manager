@@ -4,7 +4,6 @@ Complete replacement for battery_system.py that preserves ALL functionality.
 """
 
 import logging
-import math
 import statistics
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -1331,12 +1330,12 @@ class BatterySystemManager:
             effective_today = 1.0
             effective_tomorrow = 1.0
 
-        # Round consumption up to nearest 0.025 kWh grid before passing to DP.
+        # Round consumption to nearest 0.25 kWh grid before passing to DP.
         # Smooths out small forecast variations that would otherwise cause the
-        # V-matrix to differentiate between e.g. 0.086 and 0.093 kWh periods.
-        _cons_step = 0.025
+        # V-matrix to differentiate between effectively identical consumption levels.
+        _cons_step = 0.25
         consumption_data = [
-            math.ceil(c / _cons_step) * _cons_step for c in consumption_data
+            round(c / _cons_step) * _cons_step for c in consumption_data
         ]
 
         optimization_data = {

@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.72] - 2026-04-09
+
+### Changed
+
+- DP consumption input rounded to nearest 0.25 kWh before optimization.
+  Coarser grid than previous 0.025 kWh, using standard rounding instead of ceiling.
+
 ## [7.9.71] - 2026-04-09
 
 ### Changed

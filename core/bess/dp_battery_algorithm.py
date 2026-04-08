@@ -100,7 +100,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Algorithm parameters
-SOE_STEP_KWH = 0.1
+# Number of discrete SOE states. The actual step size is computed as
+# (max_soe - min_soe) / N_SOE_STATES so it is always consistent with the
+# linspace grid — eliminating the mismatch that arose when SOE_STEP_KWH=0.1
+# did not divide the usable range evenly (e.g. 6.75 kWh / 0.1 = 67.5 → 68
+# states with step 0.09926, but next_i was computed with 0.1).
+N_SOE_STATES = 100
 
 # Discrete modes for battery control — replaces continuous power levels
 MODES = [
@@ -125,18 +130,20 @@ class StrategicIntent(Enum):
     IDLE = "IDLE"  # Small fluctuations within deadband
 
 
-def _discretize_state_space(battery_settings: BatterySettings) -> np.ndarray:
-    """Return discretized SOE levels for DP state space.
+def _discretize_state_space(battery_settings: BatterySettings) -> tuple[np.ndarray, float]:
+    """Return discretized SOE levels and the actual step size for DP state space.
 
-    Uses linspace instead of arange to guarantee exact min/max endpoints,
-    avoiding floating-point overshoot (e.g. 7.55 kWh on a 7.5 kWh battery)
-    that caused SOE > max_soe states and incorrect battery actions.
+    Uses N_SOE_STATES fixed divisions so the step size is always consistent
+    with the linspace grid. Returns both the levels array and the exact step,
+    which must be used for all next_i index calculations to avoid mismatch.
     """
-    n = round((battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
-    return np.round(
-        np.linspace(battery_settings.min_soe_kwh, battery_settings.max_soe_kwh, n + 1),
+    soe_range = battery_settings.max_soe_kwh - battery_settings.min_soe_kwh
+    actual_step = soe_range / N_SOE_STATES
+    soe_levels = np.round(
+        np.linspace(battery_settings.min_soe_kwh, battery_settings.max_soe_kwh, N_SOE_STATES + 1),
         decimals=6,
     )
+    return soe_levels, actual_step
 
 
 def _calculate_mode_energy_flows(
@@ -290,9 +297,8 @@ def _calculate_reward(
     # whose usable range is not an integer multiple of 0.1 kWh produce snapped values
     # that exceed max_soe_kwh (e.g. display shows 100.7% instead of 100%).
     _range = battery_settings.max_soe_kwh - battery_settings.min_soe_kwh
-    _n = round(_range / SOE_STEP_KWH)
-    _actual_step = _range / _n if _n > 0 else SOE_STEP_KWH
-    _snapped_i = min(max(0, round((next_soe - battery_settings.min_soe_kwh) / _actual_step)), _n)
+    _actual_step = _range / N_SOE_STATES
+    _snapped_i = min(max(0, round((next_soe - battery_settings.min_soe_kwh) / _actual_step)), N_SOE_STATES)
     snapped_next_soe = battery_settings.min_soe_kwh + _snapped_i * _actual_step
     # Hard clamp: floating-point arithmetic can still exceed bounds by epsilon
     snapped_next_soe = min(max(snapped_next_soe, battery_settings.min_soe_kwh), battery_settings.max_soe_kwh)
@@ -589,7 +595,7 @@ def _run_dynamic_programming(
     if initial_soe is None:
         initial_soe = battery_settings.min_soe_kwh
 
-    soe_levels = _discretize_state_space(battery_settings)
+    soe_levels, actual_step = _discretize_state_space(battery_settings)
 
     V = np.zeros((horizon + 1, len(soe_levels)))
 
@@ -710,7 +716,7 @@ def _run_dynamic_programming(
                 if reward == float("-inf"):
                     continue
 
-                next_i = round((next_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
+                next_i = round((next_soe - battery_settings.min_soe_kwh) / actual_step)
                 next_i = min(max(0, next_i), len(soe_levels) - 1)
 
                 value = reward + V[t + 1, next_i]
@@ -732,7 +738,7 @@ def _run_dynamic_programming(
 
             # Propagate cost basis to next period
             if t + 1 < horizon:
-                next_i = round((best_next_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
+                next_i = round((best_next_soe - battery_settings.min_soe_kwh) / actual_step)
                 next_i = min(max(0, next_i), len(soe_levels) - 1)
                 C[t + 1, next_i] = best_cost_basis
 
@@ -899,13 +905,8 @@ def _postprocess_export_reorder(
             for dem, prom in zip(demoted, promoted)
         }
 
-        # Linspace step for V-matrix index lookup (must match backward pass)
-        _n_states = len(soe_levels) - 1
-        _actual_step = (
-            (battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / _n_states
-            if _n_states > 0
-            else SOE_STEP_KWH
-        )
+        # Step size for V-matrix index lookup (must match backward pass)
+        _actual_step = (battery_settings.max_soe_kwh - battery_settings.min_soe_kwh) / N_SOE_STATES
 
         changed = False
         for period in window:
@@ -1094,11 +1095,11 @@ def optimize_battery_schedule(
     # Step 2: Extract optimal path results directly from stored DP data
     hourly_results = []
     current_soe = initial_soe
-    soe_levels = _discretize_state_space(battery_settings)
+    soe_levels, actual_step = _discretize_state_space(battery_settings)
 
     for t in range(horizon):
         # Find current state index (same logic as simulation)
-        i = round((current_soe - battery_settings.min_soe_kwh) / SOE_STEP_KWH)
+        i = round((current_soe - battery_settings.min_soe_kwh) / actual_step)
         i = min(max(0, i), len(soe_levels) - 1)
 
         # Get the PeriodData from DP results - should always exist with valid inputs

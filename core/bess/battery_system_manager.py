@@ -1175,6 +1175,7 @@ class BatterySystemManager:
 
             consumption_data = consumption_predictions
             solar_data = solar_predictions
+            consumption_forecast_ref = consumption_predictions
 
             # Initialize all periods with minimal SOC for next day
             initial_soe = self.battery_settings.min_soe_kwh
@@ -1189,6 +1190,7 @@ class BatterySystemManager:
                 i for i, p in enumerate(today_periods) if p is not None
             ]
             predictions_consumption = self._get_consumption_forecast()
+            consumption_forecast_ref = predictions_consumption
             predictions_solar = self.controller.get_solar_forecast()
 
             # Extend predictions for tomorrow when horizon exceeds today
@@ -1338,7 +1340,7 @@ class BatterySystemManager:
             ]
 
         if self.battery_settings.load_segments_enabled:
-            consumption_data = self._apply_load_segments(consumption_data)
+            consumption_data = self._apply_load_segments(consumption_data, consumption_forecast_ref)
 
         optimization_data = {
             "full_consumption": consumption_data,
@@ -1357,12 +1359,14 @@ class BatterySystemManager:
 
         return optimization_period, optimization_data
 
-    def _apply_load_segments(self, consumption_data: list[float]) -> list[float]:
+    def _apply_load_segments(self, consumption_data: list[float], forecast_ref: list[float]) -> list[float]:
         """Replace consumption forecast with segment averages for evening and night periods.
 
-        For each defined segment, computes the average of the existing forecast values
-        that fall within the segment on day 1 (periods 0-95), then applies that average
-        to every matching period across the full horizon (288 periods).
+        For each defined segment, computes the average of the pure consumption forecast
+        (forecast_ref, always the 7-day avg profile) for periods within the segment on
+        day 1 (periods 0-95), then applies that average to every matching period across
+        the full horizon. Using forecast_ref (not consumption_data) ensures that past
+        periods filled with actual measurements do not distort the segment average.
 
         Midnight-crossing segments (e.g. 19:30 → 01:00) are supported.
         Periods outside all segments are left unchanged.
@@ -1394,8 +1398,9 @@ class BatterySystemManager:
             if not indices:
                 continue
 
-            # Compute average from day 1 forecast (periods 0-95)
-            day1_values = [consumption_data[i] for i in indices if i < len(consumption_data)]
+            # Compute average from day 1 pure forecast (not consumption_data, which may
+            # contain actual measurements for past periods instead of forecast values)
+            day1_values = [forecast_ref[i] for i in indices if i < len(forecast_ref)]
             if not day1_values:
                 continue
             avg = sum(day1_values) / len(day1_values)

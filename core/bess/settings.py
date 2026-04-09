@@ -133,6 +133,10 @@ class BatterySettings:
     export_look_ahead_guard: bool = False
     export_postprocess_reorder: bool = False
     dp_soe_states: int = 100
+    discharge_tiebreaker_enabled: bool = False
+    discharge_tiebreaker_epsilon: float = 0.003
+    consumption_rounding_enabled: bool = False
+    consumption_rounding_step: float = 0.025
     reserved_capacity: float = field(init=False)
     min_soe_kwh: float = field(init=False)
     max_soe_kwh: float = field(init=False)
@@ -188,7 +192,22 @@ class BatterySettings:
             self.export_look_ahead_guard = battery_config.get("export_look_ahead_guard", False)
             self.export_postprocess_reorder = battery_config.get("export_postprocess_reorder", False)
             self.dp_soe_states = int(battery_config.get("dp_soe_states", 100))
-            self.__post_init__()
+
+        # DP algorithm settings — read from dp section, fall back to battery for migration
+        dp_config = config.get("dp", config.get("battery", {}))
+        self.min_action_profit_threshold = dp_config.get("min_action_profit_threshold", BATTERY_MIN_ACTION_PROFIT_THRESHOLD)
+        self.idle_deadband_pct = dp_config.get("idle_deadband_pct", BATTERY_IDLE_DEADBAND_PCT)
+        self.grid_charge_max_solar_threshold_kwh = dp_config.get("grid_charge_max_solar_threshold_kwh", 0.1)
+        self.grid_charge_min_headroom_kwh = dp_config.get("grid_charge_min_headroom_kwh", 0.9)
+        self.idle_enabled = dp_config.get("idle_enabled", True)
+        self.export_look_ahead_guard = dp_config.get("export_look_ahead_guard", False)
+        self.export_postprocess_reorder = dp_config.get("export_postprocess_reorder", False)
+        self.dp_soe_states = int(dp_config.get("soe_states", dp_config.get("dp_soe_states", 100)))
+        self.discharge_tiebreaker_enabled = dp_config.get("discharge_tiebreaker_enabled", False)
+        self.discharge_tiebreaker_epsilon = dp_config.get("discharge_tiebreaker_epsilon", 0.003)
+        self.consumption_rounding_enabled = dp_config.get("consumption_rounding_enabled", False)
+        self.consumption_rounding_step = dp_config.get("consumption_rounding_step", 0.025)
+        self.__post_init__()
         return self
 
 
@@ -206,8 +225,6 @@ class HomeSettings:
     consumption_strategy: str = "sensor"
     history_days: int = 1
     inverter_phase: str = ""
-    consumption_rounding_enabled: bool = False
-    consumption_rounding_step: float = 0.025
 
     def __post_init__(self):
         assert self.phase_count in (
@@ -218,7 +235,6 @@ class HomeSettings:
         assert self.inverter_phase in (
             "", "L1", "L2", "L3"
         ), f"inverter_phase must be '', 'L1', 'L2' or 'L3', got {self.inverter_phase}"
-        assert self.consumption_rounding_step > 0, f"consumption_rounding_step must be > 0, got {self.consumption_rounding_step}"
 
     def update(self, **kwargs: Any) -> None:
         """Update settings from dict."""
@@ -253,8 +269,6 @@ class HomeSettings:
             )
             self.history_days = home_config.get("history_days", 1)
             self.inverter_phase = home_config.get("inverter_phase", "")
-            self.consumption_rounding_enabled = home_config.get("consumption_rounding_enabled", False)
-            self.consumption_rounding_step = home_config.get("consumption_rounding_step", 0.025)
             self.__post_init__()
         return self
 

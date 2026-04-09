@@ -319,6 +319,8 @@ class BESSController:
             battery_config = options["battery"]
             electricity_price_config = options["electricity_price"]
             home_config = options["home"]
+            # dp section is optional; fall back to battery section for migration
+            dp_config = options.get("dp", battery_config)
 
             # Required battery settings
             required_battery_keys = [
@@ -327,12 +329,19 @@ class BESSController:
                 "max_soc",
                 "cycle_cost",
                 "max_charge_discharge_power",
-                "min_action_profit_threshold",
             ]
             for key in required_battery_keys:
                 if key not in battery_config:
                     raise ValueError(
                         f"Required battery setting '{key}' is missing from config.yaml"
+                    )
+
+            # Required dp settings (checked in dp section, fall back to battery for migration)
+            required_dp_keys = ["min_action_profit_threshold"]
+            for key in required_dp_keys:
+                if key not in dp_config:
+                    raise ValueError(
+                        f"Required dp setting '{key}' is missing from config.yaml"
                     )
 
             # Required electricity price settings
@@ -367,26 +376,30 @@ class BESSController:
 
             settings = {
                 "battery": {
+                    # Hardware settings (from battery section)
                     "totalCapacity": battery_config["total_capacity"],
                     "minSoc": battery_config["min_soc"],
                     "maxSoc": battery_config["max_soc"],
                     "cycleCostPerKwh": battery_config["cycle_cost"],
                     "maxChargePowerKw": battery_config["max_charge_discharge_power"],
                     "maxDischargePowerKw": battery_config["max_charge_discharge_power"],
-                    "minActionProfitThreshold": battery_config[
-                        "min_action_profit_threshold"
-                    ],
-                    "idleDeadbandPct": battery_config.get("idle_deadband_pct", 2.0),
-                    "gridChargeMaxSolarThresholdKwh": battery_config.get("grid_charge_max_solar_threshold_kwh", 0.1),
-                    "gridChargeMinHeadroomKwh": battery_config.get("grid_charge_min_headroom_kwh", 0.9),
-                    "idleEnabled": battery_config.get("idle_enabled", True),
                     "modbusTouControl": battery_config.get("modbus_tou_control", False),
                     "modbusTouEntityPrefix": battery_config.get("modbus_tou_entity_prefix", ""),
                     "exportLimitEnableOption": battery_config.get("export_limit_enable_option", "Meter 1"),
                     "exportLimitSimulation": battery_config.get("export_limit_simulation", True),
-                    "exportLookAheadGuard": battery_config.get("export_look_ahead_guard", False),
-                    "exportPostprocessReorder": battery_config.get("export_postprocess_reorder", False),
-                    "dpSoeStates": battery_config.get("dp_soe_states", 100),
+                    # DP/algorithm settings (from dp section, fallback to battery for migration)
+                    "minActionProfitThreshold": dp_config["min_action_profit_threshold"],
+                    "idleDeadbandPct": dp_config.get("idle_deadband_pct", 2.0),
+                    "gridChargeMaxSolarThresholdKwh": dp_config.get("grid_charge_max_solar_threshold_kwh", 0.1),
+                    "gridChargeMinHeadroomKwh": dp_config.get("grid_charge_min_headroom_kwh", 0.9),
+                    "idleEnabled": dp_config.get("idle_enabled", True),
+                    "exportLookAheadGuard": dp_config.get("export_look_ahead_guard", False),
+                    "exportPostprocessReorder": dp_config.get("export_postprocess_reorder", False),
+                    "dpSoeStates": dp_config.get("soe_states", dp_config.get("dp_soe_states", 100)),
+                    "dischargeTiebreakerEnabled": dp_config.get("discharge_tiebreaker_enabled", False),
+                    "dischargeTiebreakerEpsilon": dp_config.get("discharge_tiebreaker_epsilon", 0.003),
+                    "consumptionRoundingEnabled": dp_config.get("consumption_rounding_enabled", False),
+                    "consumptionRoundingStep": dp_config.get("consumption_rounding_step", 0.025),
                 },
                 "home": {
                     "defaultHourly": home_config["consumption"],
@@ -398,8 +411,6 @@ class BESSController:
                     "consumptionStrategy": home_config["consumption_strategy"],
                     "historyDays": home_config.get("history_days", 1),
                     "inverterPhase": home_config.get("inverter_phase", ""),
-                    "consumptionRoundingEnabled": home_config.get("consumption_rounding_enabled", False),
-                    "consumptionRoundingStep": home_config.get("consumption_rounding_step", 0.025),
                 },
                 "price": {
                     "area": electricity_price_config["area"],

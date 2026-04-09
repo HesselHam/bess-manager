@@ -5,6 +5,22 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.75] - 2026-04-09
+
+### Added
+
+- New `dp` config section grouping all DP algorithm settings (moved from `battery` and `home`).
+  Backward-compatible: if `dp` section is absent, settings are read from `battery` as before.
+  New keys: `soe_states` (replaces `dp_soe_states`), `discharge_tiebreaker_enabled`,
+  `discharge_tiebreaker_epsilon`, `consumption_rounding_enabled`, `consumption_rounding_step`.
+- Discharge tiebreaker: adds a small epsilon bonus to LOAD_SUPPORT in the DP backward pass
+  when buy price exceeds cost basis, breaking near-ties in favour of discharging at higher prices
+  rather than holding for future solar-converged periods. Disabled by default.
+
+### Changed
+
+- `consumption_rounding_enabled` and `consumption_rounding_step` moved from `home` to `dp` section.
+
 ## [7.9.74] - 2026-04-09
 
 ### Changed

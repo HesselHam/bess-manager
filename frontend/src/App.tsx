@@ -1,12 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
+import DecisionsPage from './pages/DecisionsPage';
 import SavingsAnalysisPage from './pages/SavingsPage';
 import InverterPage from './pages/InverterPage';
 import InsightsPage from './pages/InsightsPage';
 import SystemHealthPage from './pages/SystemHealthPage';
 import { useSettings } from './hooks/useSettings';
-import { Home, Activity, TrendingUp, Brain, Zap, Sun, Moon } from 'lucide-react';
+import { Home, Activity, TrendingUp, Brain, Zap, Sun, Moon, Calendar } from 'lucide-react';
 
 // An ErrorBoundary component to catch rendering errors
 class ErrorBoundary extends React.Component<
@@ -48,38 +49,36 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// Navigation component with new 4-tab structure
+// Navigation component
 const Navigation = () => {
   const location = useLocation();
-  
+
   const isActive = (path: string) => {
-    // FIXED: Dashboard should be active for both "/" and when no specific page is selected
-    if (path === '/') {
-      // Dashboard is active for root path OR if we're not on any of the other specific pages
-      const otherPages = ['/insights', '/savings', '/inverter', '/system-health'];
-      const isOnOtherPage = otherPages.some(page => location.pathname.startsWith(page));
-      const isDashboardActive = location.pathname === '/' || !isOnOtherPage;
-      
-      return isDashboardActive ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100';
-    }
-    
-    // For other pages, check if current path starts with the target path
-    return location.pathname.startsWith(path) ? 
-      'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100';
+    return location.pathname === path || location.pathname.startsWith(path + '/')
+      ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+      : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100';
   };
-    
+
   return (
     <div className="flex space-x-2">
-      <Link 
-        to="/" 
-        className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center space-x-1 ${isActive('/')}`}
+      <Link
+        to="/decisions"
+        className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center space-x-1 ${isActive('/decisions')}`}
+        title="15-minuten beslissingstabel"
+      >
+        <Calendar className="h-5 w-5" />
+        <span className="hidden sm:inline">Decisions</span>
+      </Link>
+      <Link
+        to="/dashboard"
+        className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center space-x-1 ${isActive('/dashboard')}`}
         title="Quick overview & live monitoring"
       >
         <Home className="h-5 w-5" />
         <span className="hidden sm:inline">Dashboard</span>
       </Link>
-      <Link 
-        to="/savings" 
+      <Link
+        to="/savings"
         className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center space-x-1 ${isActive('/savings')}`}
         title="Financial analysis & detailed reports"
       >
@@ -259,19 +258,19 @@ function App() {
             
             <ErrorBoundary>
               <Routes>
-                <Route path="/" element={
-                  <DashboardPage 
-                    onLoadingChange={(loading: boolean) => {}}
+                <Route path="/" element={<Navigate to="/decisions" replace />} />
+                <Route path="/decisions" element={<DecisionsPage />} />
+                <Route path="/dashboard" element={
+                  <DashboardPage
+                    onLoadingChange={() => {}}
                     settings={mergedSettings}
                   />
                 } />
-                <Route path="/dashboard" element={<Navigate to="/" replace />} />
                 <Route path="/insights" element={<InsightsPage />} />
                 <Route path="/savings" element={<SavingsAnalysisPage />} />
                 <Route path="/inverter" element={<InverterPage />} />
                 <Route path="/system-health" element={<SystemHealthPage />} />
-                {/* Catch-all route: redirect any unmatched paths to dashboard */}
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<Navigate to="/decisions" replace />} />
               </Routes>
             </ErrorBoundary>
           </main>

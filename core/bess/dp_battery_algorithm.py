@@ -721,6 +721,19 @@ def _run_dynamic_programming(
 
                 value = reward + V[t + 1, next_i]
 
+                # Tiebreaker: add a small epsilon bonus to LOAD_SUPPORT when
+                # discharge is profitable (buy_price > cost_basis). This breaks
+                # near-ties in favour of "discharge now at higher price" over
+                # HOLD, countering the DP's tendency to over-value SOE
+                # preservation when future solar will fill the battery anyway.
+                if (
+                    battery_settings.discharge_tiebreaker_enabled
+                    and mode == "LOAD_SUPPORT"
+                    and battery_discharge > 0.01
+                    and buy_price[t] > C[t, i]
+                ):
+                    value += battery_settings.discharge_tiebreaker_epsilon
+
                 if value > best_value:
                     best_value = value
                     best_reward = reward

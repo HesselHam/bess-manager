@@ -1337,6 +1337,9 @@ class BatterySystemManager:
                 math.ceil(c / _cons_step) * _cons_step for c in consumption_data
             ]
 
+        if self.battery_settings.load_segments_enabled:
+            consumption_data = self._apply_load_segments(consumption_data)
+
         optimization_data = {
             "full_consumption": consumption_data,
             "full_solar": solar_data,
@@ -1353,6 +1356,58 @@ class BatterySystemManager:
         )
 
         return optimization_period, optimization_data
+
+    def _apply_load_segments(self, consumption_data: list[float]) -> list[float]:
+        """Replace consumption forecast with segment averages for evening and night periods.
+
+        For each defined segment, computes the average of the existing forecast values
+        that fall within the segment on day 1 (periods 0-95), then applies that average
+        to every matching period across the full horizon (288 periods).
+
+        Midnight-crossing segments (e.g. 19:30 → 01:00) are supported.
+        Periods outside all segments are left unchanged.
+        """
+        def parse_period(time_str: str) -> int:
+            """Convert HH:MM to 15-min period index (0-95)."""
+            h, m = map(int, time_str.split(":"))
+            return h * 4 + m // 15
+
+        def get_segment_periods(start_str: str, end_str: str) -> list[int]:
+            """Return list of period indices (0-95) within [start, end)."""
+            start = parse_period(start_str)
+            end = parse_period(end_str)
+            if start < end:
+                return list(range(start, end))
+            else:
+                # Midnight-crossing: e.g. 19:30 (78) → 01:00 (4)
+                return list(range(start, 96)) + list(range(0, end))
+
+        segments = [
+            ("evening", self.battery_settings.load_segments_evening_start, self.battery_settings.load_segments_evening_end),
+            ("night", self.battery_settings.load_segments_night_start, self.battery_settings.load_segments_night_end),
+        ]
+
+        result = list(consumption_data)
+
+        for _name, start_str, end_str in segments:
+            indices = get_segment_periods(start_str, end_str)
+            if not indices:
+                continue
+
+            # Compute average from day 1 forecast (periods 0-95)
+            day1_values = [consumption_data[i] for i in indices if i < len(consumption_data)]
+            if not day1_values:
+                continue
+            avg = sum(day1_values) / len(day1_values)
+
+            # Apply to all matching periods across full horizon
+            for t in range(len(result)):
+                if t % 96 in indices:
+                    result[t] = avg
+
+            logger.debug(f"Load segment '{_name}' ({start_str}–{end_str}): avg={avg:.4f} kWh over {len(indices)} periods/day")
+
+        return result
 
     def _calculate_terminal_value(self) -> float:
         """Calculate terminal value per kWh for the DP optimization.

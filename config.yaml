@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.76"
+version: "7.9.77"
 slug: "bess_manager"
 init: false
 arch:
@@ -80,6 +80,12 @@ options:
     discharge_tiebreaker_epsilon: 0.003  # Epsilon bonus (in currency) added to LOAD_SUPPORT value when buy > cost_basis
     consumption_rounding_enabled: false  # Round DP consumption input up to nearest step (true/false)
     consumption_rounding_step: 0.025     # Rounding step in kWh (e.g. 0.025)
+    load_segments:
+      enabled: false           # Replace forecast with segment averages for defined time windows
+      evening_start: "19:30"   # Evening segment start (HH:MM)
+      evening_end: "01:00"     # Evening segment end (HH:MM, midnight-crossing supported)
+      night_start: "01:00"     # Night segment start (HH:MM)
+      night_end: "07:00"       # Night segment end (HH:MM)
   electricity_price:
     area: "SE4"                      # Area for Nordpool pricing
     markup_rate: 0.1116              # Electricity markup per kWh (in your currency)
@@ -193,6 +199,12 @@ schema:
     discharge_tiebreaker_epsilon: float?
     consumption_rounding_enabled: bool?
     consumption_rounding_step: float?
+    load_segments:
+      enabled: bool?
+      evening_start: str?
+      evening_end: str?
+      night_start: str?
+      night_end: str?
   electricity_price:
     area: str
     markup_rate: float

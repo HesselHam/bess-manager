@@ -400,6 +400,11 @@ class BESSController:
                     "dischargeTiebreakerEpsilon": dp_config.get("discharge_tiebreaker_epsilon", 0.003),
                     "consumptionRoundingEnabled": dp_config.get("consumption_rounding_enabled", False),
                     "consumptionRoundingStep": dp_config.get("consumption_rounding_step", 0.025),
+                    "loadSegmentsEnabled": dp_config.get("load_segments", {}).get("enabled", False),
+                    "loadSegmentsEveningStart": dp_config.get("load_segments", {}).get("evening_start", "19:30"),
+                    "loadSegmentsEveningEnd": dp_config.get("load_segments", {}).get("evening_end", "01:00"),
+                    "loadSegmentsNightStart": dp_config.get("load_segments", {}).get("night_start", "01:00"),
+                    "loadSegmentsNightEnd": dp_config.get("load_segments", {}).get("night_end", "07:00"),
                 },
                 "home": {
                     "defaultHourly": home_config["consumption"],

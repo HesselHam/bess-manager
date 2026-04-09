@@ -137,6 +137,11 @@ class BatterySettings:
     discharge_tiebreaker_epsilon: float = 0.003
     consumption_rounding_enabled: bool = False
     consumption_rounding_step: float = 0.025
+    load_segments_enabled: bool = False
+    load_segments_evening_start: str = "19:30"
+    load_segments_evening_end: str = "01:00"
+    load_segments_night_start: str = "01:00"
+    load_segments_night_end: str = "07:00"
     reserved_capacity: float = field(init=False)
     min_soe_kwh: float = field(init=False)
     max_soe_kwh: float = field(init=False)

@@ -40,6 +40,7 @@ interface PeriodDetail {
   dpReward: number | null;
   dpValue: number | null;
   solarCorrectionFactor: number | null;
+  loadSegment: string | null;
 }
 
 interface PeriodDetailsResponse {
@@ -173,6 +174,7 @@ const DecisionsPage: React.FC = () => {
                     <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP reward voor gekozen actie">Reward</th>
                     <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP waarde functie V[t,i]">V[t,i]</th>
                     <th className="px-2 py-2 text-right font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap" title="Solar forecast correctiefactor">☀ corr.</th>
+                    <th className="px-2 py-2 text-left font-semibold text-teal-600 dark:text-teal-400 whitespace-nowrap" title="Load segment (avond/nacht)">Segment</th>
                   </tr>
                   <tr className="text-gray-400 dark:text-gray-500">
                     <td className="px-2 pb-1"></td>
@@ -199,6 +201,7 @@ const DecisionsPage: React.FC = () => {
                     <td className="px-2 pb-1 text-right">{currency}</td>
                     <td className="px-2 pb-1 text-right">{currency}</td>
                     <td className="px-2 pb-1"></td>
+                    <td className="px-2 pb-1"></td>
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
@@ -211,7 +214,7 @@ const DecisionsPage: React.FC = () => {
                         lastDate = p.date;
                         rows.push(
                           <tr key={`date-${p.date}`} className="bg-gray-100 dark:bg-gray-700/60">
-                            <td colSpan={24} className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                            <td colSpan={25} className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
                               {p.date}
                             </td>
                           </tr>
@@ -282,6 +285,9 @@ const DecisionsPage: React.FC = () => {
                           </td>
                           <td className={`px-2 py-1 text-right font-mono ${p.solarCorrectionFactor != null && p.solarCorrectionFactor !== 1 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'}`}>
                             {p.solarCorrectionFactor != null ? p.solarCorrectionFactor.toFixed(3) : '1.000'}
+                          </td>
+                          <td className="px-2 py-1 text-left font-mono text-teal-600 dark:text-teal-400">
+                            {p.loadSegment ?? ''}
                           </td>
                         </tr>
                       );

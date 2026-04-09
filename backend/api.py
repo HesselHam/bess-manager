@@ -1525,6 +1525,26 @@ async def get_period_details():
                 actual_discharge = period_control.get(f"sensor.{short_id}")
             return actual_charge, actual_discharge
 
+        # Load segment helper
+        battery_settings = system.battery_settings
+        def _get_load_segment(display_period: int) -> str | None:
+            """Return 'evening', 'night', or None for a given period (0-95)."""
+            if not battery_settings.load_segments_enabled:
+                return None
+            def parse(t: str) -> int:
+                h, m = map(int, t.split(":"))
+                return h * 4 + m // 15
+            def in_segment(p: int, start_str: str, end_str: str) -> bool:
+                start, end = parse(start_str), parse(end_str)
+                if start < end:
+                    return start <= p < end
+                return p >= start or p < end
+            if in_segment(display_period, battery_settings.load_segments_evening_start, battery_settings.load_segments_evening_end):
+                return "evening"
+            if in_segment(display_period, battery_settings.load_segments_night_start, battery_settings.load_segments_night_end):
+                return "night"
+            return None
+
         def _make_actual_entry(idx: int, actual, planned=None, control_data: dict | None = None) -> dict:
             """Build a period entry from historical store data.
 
@@ -1587,6 +1607,7 @@ async def get_period_details():
                 "dpReward": round(planned.decision.dp_reward, 4) if planned is not None else None,
                 "dpValue": round(planned.decision.dp_value, 4) if planned is not None else None,
                 "solarCorrectionFactor": round(planned.decision.solar_correction_factor, 3) if planned is not None else 1.0,
+                "loadSegment": _get_load_segment(idx % 96),
             }
 
         periods = []
@@ -1690,6 +1711,7 @@ async def get_period_details():
                 "dpReward": round(period_data.decision.dp_reward, 4),
                 "dpValue": round(period_data.decision.dp_value, 4),
                 "solarCorrectionFactor": round(period_data.decision.solar_correction_factor, 3),
+                "loadSegment": _get_load_segment(display_period),
             }
             periods.append(entry)
 

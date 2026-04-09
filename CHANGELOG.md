@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.77] - 2026-04-09
+
+### Added
+
+- Load segments: define evening and night time windows in `dp.load_segments` config.
+  When enabled, the DP consumption forecast for each segment is replaced by the average
+  of all forecast values in that window (computed from day 1, applied across all 288 periods).
+  Midnight-crossing windows (e.g. 19:30 → 01:00) are supported.
+  Active segment shown as "evening"/"night" column in Decisions table.
+
 ## [7.9.76] - 2026-04-09
 
 ### Changed

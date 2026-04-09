@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.76] - 2026-04-09
+
+### Changed
+
+- DP backward induction now uses linear interpolation between adjacent SOE grid points
+  instead of rounding to the nearest point. Eliminates discretisation errors that
+  accumulated over 96+ periods, giving more accurate value propagation without
+  requiring more SOE states.
+
 ## [7.9.75] - 2026-04-09
 
 ### Added

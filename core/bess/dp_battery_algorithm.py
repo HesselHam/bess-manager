@@ -716,10 +716,13 @@ def _run_dynamic_programming(
                 if reward == float("-inf"):
                     continue
 
-                next_i = round((next_soe - battery_settings.min_soe_kwh) / actual_step)
-                next_i = min(max(0, next_i), len(soe_levels) - 1)
-
-                value = reward + V[t + 1, next_i]
+                # Linear interpolation between adjacent SOE grid points to avoid
+                # discretisation rounding errors accumulating across 96+ periods.
+                j = int((next_soe - battery_settings.min_soe_kwh) / actual_step)
+                j = min(max(0, j), len(soe_levels) - 2)
+                fraction = (next_soe - soe_levels[j]) / actual_step
+                fraction = min(max(0.0, fraction), 1.0)  # clip for float safety
+                value = reward + (1.0 - fraction) * V[t + 1, j] + fraction * V[t + 1, j + 1]
 
                 # Tiebreaker: add a small epsilon bonus to LOAD_SUPPORT when
                 # discharge is profitable (buy_price > cost_basis). This breaks

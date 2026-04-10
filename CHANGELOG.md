@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.79] - 2026-04-10
+
+### Fixed
+
+- Nordpool prices were incorrectly divided by vat_multiplier (1.21) in
+  HomeAssistantSource, assuming raw_today values include VAT. They don't —
+  the raw_today attribute contains VAT-exclusive spot prices. This caused
+  buy prices used by the DP to be ~17% too low, leading to suboptimal decisions.
+
 ## [7.9.78] - 2026-04-09
 
 ### Fixed

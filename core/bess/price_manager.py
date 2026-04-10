@@ -112,9 +112,9 @@ class MockSource(PriceSource):
 class HomeAssistantSource(PriceSource):
     """Home Assistant Nordpool sensor price source with robust timestamp-based parsing.
 
-    This source handles Nordpool prices from Home Assistant, which include VAT.
-    It removes VAT from prices before returning them, ensuring all price sources
-    consistently return VAT-exclusive prices.
+    Reads raw_today/raw_tomorrow attributes from the Nordpool HA sensor. These
+    attributes contain VAT-exclusive spot prices. VAT is applied by
+    PriceManager._calculate_buy_price together with markup and additional costs.
     """
 
     def __init__(
@@ -267,10 +267,6 @@ class HomeAssistantSource(PriceSource):
 
             # Extract prices
             prices = [float(entry["value"]) for entry in raw_data if "value" in entry]
-
-            # Nordpool prices from Home Assistant include VAT - remove it
-            # to standardize all price sources to return VAT-exclusive prices
-            prices = [price / self.vat_multiplier for price in prices]
 
             # Handle DST transitions
             return self._handle_dst_transitions(prices)

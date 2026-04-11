@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.80] - 2026-04-11
+
+### Fixed
+
+- Modbus TOU control: entity names were built with double underscore when
+  `modbus_tou_entity_prefix` had a trailing underscore (e.g. `growatt_modbus_min3600tlxh_`
+  produced `growatt_modbus_min3600tlxh__time_1_active`). Fixed by stripping trailing
+  underscore from prefix before building entity IDs. Updated config example and docstring
+  to show correct prefix format (`growatt_modbus`).
+
 ## [7.9.79] - 2026-04-10
 
 ### Fixed

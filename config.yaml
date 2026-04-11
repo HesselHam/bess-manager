@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.79"
+version: "7.9.80"
 slug: "bess_manager"
 init: false
 arch:
@@ -44,7 +44,7 @@ options:
     max_charge_discharge_power: 100  # kW
     cycle_cost: 0.045                # Battery wear cost per kWh (excl. VAT) - use your local currency
     modbus_tou_control: false        # Write TOU segments via local Modbus instead of Growatt cloud API (false = cloud API)
-    modbus_tou_entity_prefix: ""     # SolaX Modbus entity prefix, e.g. "growatt_modbus_min3600tlxh"
+    modbus_tou_entity_prefix: ""     # Growatt Modbus entity prefix, e.g. "growatt_modbus"
     export_limit_enable_option: "Meter 1"  # Option to select on export_limit_entity to block export (Meter 1 / Meter 2 / CT Clamp)
     export_limit_simulation: true          # When true: DP and UI reflect export blocking, but inverter is not written
     solar_forecast_correction:

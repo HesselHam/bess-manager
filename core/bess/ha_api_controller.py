@@ -978,14 +978,14 @@ class HomeAssistantAPIController:
         end_time: str,
         enabled: bool,
     ) -> None:
-        """Set inverter time segment via local Modbus (SolaX integration entities).
+        """Set inverter time segment via local Modbus (Growatt Modbus integration entities).
 
         Writes all four select entities then presses the update button to commit
         the values to the inverter in a single Modbus transaction. Faster than
         the cloud API path (no Growatt server roundtrip).
 
         Args:
-            entity_prefix: SolaX entity prefix, e.g. "growatt_modbus_min3600tlxh"
+            entity_prefix: Growatt Modbus entity prefix, e.g. "growatt_modbus"
             segment_id: Segment number (1-9)
             batt_mode: Battery mode ("load_first", "battery_first", or "grid_first")
             start_time: Start time in "HH:MM" format
@@ -999,7 +999,7 @@ class HomeAssistantAPIController:
         }
         mode_option = mode_map[batt_mode]
         active_option = "Enabled" if enabled else "Disabled"
-        base = f"{entity_prefix}_time_{segment_id}"
+        base = f"{entity_prefix.rstrip('_')}_time_{segment_id}"
         enabled_str = "enabled" if enabled else "disabled"
 
         logger.info(

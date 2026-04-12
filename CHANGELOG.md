@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.83] - 2026-04-12
+
+### Fixed
+
+- Fix Modbus EMS sensor prefixes: `battery_charge_stop_soc`, `battery_discharge_stop_soc`,
+  `battery_charging_power_rate`, `battery_discharging_power_rate` use `number.` domain
+  (not `sensor.`) in the Modbus config defaults
+
 ## [7.9.82] - 2026-04-12
 
 ### Fixed

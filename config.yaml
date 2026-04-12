@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.82"
+version: "7.9.83"
 slug: "bess_manager"
 init: false
 arch:
@@ -153,10 +153,10 @@ options:
     modbus:
       # === Battery Control & Status ===
       battery_soc: "sensor.growatt_modbus_battery_soc"
-      battery_charge_stop_soc: "sensor.growatt_modbus_min3600tlxh_ems_charging_stop_soc"
-      battery_discharge_stop_soc: "sensor.growatt_modbus_min3600tlxh_ems_discharging_stop_soc_on_grid"
-      battery_charging_power_rate: "sensor.growatt_modbus_min3600tlxh_ems_charging_rate"
-      battery_discharging_power_rate: "sensor.growatt_modbus_min3600tlxh_ems_discharging_rate"
+      battery_charge_stop_soc: "number.growatt_modbus_min3600tlxh_ems_charging_stop_soc"
+      battery_discharge_stop_soc: "number.growatt_modbus_min3600tlxh_ems_discharging_stop_soc_on_grid"
+      battery_charging_power_rate: "number.growatt_modbus_min3600tlxh_ems_charging_rate"
+      battery_discharging_power_rate: "number.growatt_modbus_min3600tlxh_ems_discharging_rate"
       grid_charge: ""                # No Modbus equivalent found
       bdc_switch: "select.growatt_modbus_min3600tlxh_inverter_switch"
       export_limit_entity: "select.growatt_modbus_min3600tlxh_limit_grid_export"

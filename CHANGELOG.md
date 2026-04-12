@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.81] - 2026-04-12
+
+### Added
+
+- Modbus-first sensor architecture: `sensors` section in config now has `growatt` and
+  `modbus` subsections, each containing all sensor keys. Set `use_modbus: true` to prefer
+  Modbus entities; Growatt API is used as automatic fallback when a Modbus entity returns
+  unavailable. Sensors without a Modbus equivalent (P1 meter, forecasts) remain API-only
+  by leaving the `modbus` entry empty.
+
 ## [7.9.80] - 2026-04-11
 
 ### Fixed

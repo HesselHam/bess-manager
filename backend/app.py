@@ -114,10 +114,15 @@ class BESSController:
             options = {}
 
         # Initialize Home Assistant API Controller with sensor config from options
-        sensor_config = options.get("sensors", {})
+        sensors_section = options.get("sensors", {})
+        growatt_sensors = sensors_section.get("growatt", {})
+        modbus_sensors = sensors_section.get("modbus", {})
+        use_modbus = sensors_section.get("use_modbus", False)
         growatt_config = options.get("growatt", {})
         growatt_device_id = growatt_config.get("device_id")
-        self.ha_controller = self._init_ha_controller(sensor_config, growatt_device_id)
+        self.ha_controller = self._init_ha_controller(
+            growatt_sensors, modbus_sensors, use_modbus, growatt_device_id
+        )
 
         # Set timezone from HA config before any BESS modules use it
         try:
@@ -170,11 +175,19 @@ class BESSController:
 
         logger.info("BESS Controller initialized with early settings loading")
 
-    def _init_ha_controller(self, sensor_config, growatt_device_id=None):
+    def _init_ha_controller(
+        self,
+        growatt_sensors: dict,
+        modbus_sensors: dict,
+        use_modbus: bool,
+        growatt_device_id: str | None = None,
+    ):
         """Initialize Home Assistant API controller based on environment.
 
         Args:
-            sensor_config: Sensor configuration dictionary to use for the controller.
+            growatt_sensors: Growatt API sensor configuration (sensors.growatt).
+            modbus_sensors: Modbus sensor configuration (sensors.modbus).
+            use_modbus: Whether to prefer Modbus entities over Growatt API.
             growatt_device_id: Growatt device ID for TOU segment operations.
         """
         ha_token = os.getenv("HASSIO_TOKEN")
@@ -185,13 +198,16 @@ class BESSController:
             ha_url = os.environ.get("HA_URL", "http://supervisor/core")
 
         logger.info(
-            f"Initializing HA controller with {len(sensor_config)} sensor configurations"
+            f"Initializing HA controller with {len(growatt_sensors)} Growatt and "
+            f"{len(modbus_sensors)} Modbus sensor configurations (use_modbus={use_modbus})"
         )
 
         return HomeAssistantAPIController(
             ha_url=ha_url,
             token=ha_token,
-            sensor_config=sensor_config,
+            sensor_config=growatt_sensors,
+            modbus_sensors=modbus_sensors,
+            use_modbus=use_modbus,
             growatt_device_id=growatt_device_id,
         )
 

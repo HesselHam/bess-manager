@@ -93,6 +93,8 @@ class HomeAssistantAPIController:
         ha_url: str,
         token: str,
         sensor_config: dict | None = None,
+        modbus_sensors: dict | None = None,
+        use_modbus: bool = False,
         growatt_device_id: str | None = None,
     ):
         """Initialize the Controller with Home Assistant API access.
@@ -100,7 +102,9 @@ class HomeAssistantAPIController:
         Args:
             ha_url: Base URL of Home Assistant (default: "http://supervisor/core")
             token: Long-lived access token for Home Assistant
-            sensor_config: Sensor configuration mapping from options.json
+            sensor_config: Growatt API sensor configuration mapping (sensors.growatt)
+            modbus_sensors: Modbus sensor configuration mapping (sensors.modbus)
+            use_modbus: When True, prefer Modbus entities over Growatt API; fall back to API
             growatt_device_id: Growatt device ID for TOU segment operations
 
         """
@@ -114,8 +118,11 @@ class HomeAssistantAPIController:
         self.retry_base_delay = 2  # seconds (exponential backoff: 2, 4, 8)
         self.test_mode = False
 
-        # Use provided sensor configuration
+        # Growatt API sensor configuration (primary when use_modbus=False)
         self.sensors = sensor_config or {}
+        # Modbus sensor configuration (preferred when use_modbus=True)
+        self.modbus_sensors = modbus_sensors or {}
+        self.use_modbus = use_modbus
 
         # Store Growatt device ID for TOU operations
         self.growatt_device_id = growatt_device_id
@@ -128,7 +135,9 @@ class HomeAssistantAPIController:
         self.session.headers.update(self.headers)
 
         logger.info(
-            f"Initialized HomeAssistantAPIController with {len(self.sensors)} sensor mappings"
+            f"Initialized HomeAssistantAPIController with {len(self.sensors)} Growatt "
+            f"and {len(self.modbus_sensors)} Modbus sensor mappings "
+            f"(use_modbus={self.use_modbus})"
         )
 
     # Class-level sensor mapping - immutable mapping
@@ -403,22 +412,29 @@ class HomeAssistantAPIController:
     def _resolve_entity_id(self, sensor_key: str) -> tuple[str, str]:
         """Unified entity ID resolution with consistent logic.
 
+        When use_modbus=True, prefers the Modbus entity for the given sensor key.
+        Falls back to the Growatt API entity if no Modbus entity is configured.
+
         Args:
             sensor_key: The sensor key to resolve
 
         Returns:
-            tuple: (entity_id, resolution_method)
+            tuple: (entity_id, resolution_method) where resolution_method is
+                   "modbus" or "configured"
 
         Raises:
-            ValueError: If sensor_key not found
+            ValueError: If sensor_key not found in either configuration
         """
-        # First check our sensor configuration
+        if self.use_modbus:
+            modbus_entity = self.modbus_sensors.get(sensor_key, "")
+            if modbus_entity:
+                return modbus_entity, "modbus"
+
         if sensor_key in self.sensors:
             entity_id = self.sensors[sensor_key]
-            return entity_id, "configured"
+            if entity_id:
+                return entity_id, "configured"
 
-        # Require explicit configuration for all operations
-        # This ensures proper sensor mapping and prevents silent failures
         raise ValueError(f"No entity ID configured for sensor '{sensor_key}'")
 
     def get_method_sensor_info(self, method_name: str) -> dict:
@@ -689,20 +705,13 @@ class HomeAssistantAPIController:
             json=json_data,
         )
 
-    def _get_sensor_value(self, sensor_name) -> float | None:
-        """Get value from any sensor by name using unified entity resolution.
+    def _read_ha_state(self, entity_id: str, sensor_name: str) -> float | None:
+        """Read a single HA entity state and return as float.
 
         Returns:
-            float: The sensor value, or None if the sensor is unavailable,
-            unknown, or could not be read.
+            float: The sensor value, or None if unavailable/unknown/invalid.
         """
         try:
-            entity_id, resolution_method = self._resolve_entity_id(sensor_name)
-            logger.debug(
-                f"Resolving sensor '{sensor_name}' to entity '{entity_id}' (method: {resolution_method})"
-            )
-
-            # Make API call to get state
             response = self._api_request(
                 "get",
                 f"/api/states/{entity_id}",
@@ -730,20 +739,56 @@ class HomeAssistantAPIController:
                 return None
 
         except (ValueError, TypeError):
-            logger.warning("Could not get value for %s", sensor_name)
+            logger.warning("Could not parse value for %s (entity: %s)", sensor_name, entity_id)
             return None
         except requests.RequestException as e:
-            logger.error("Error fetching sensor %s: %s", sensor_name, str(e))
-
-            # Record runtime failure if failure tracker is available
+            logger.error("Error fetching sensor %s (entity: %s): %s", sensor_name, entity_id, str(e))
             if self.failure_tracker:
                 self.failure_tracker.record_failure(
                     operation=f"Read sensor '{sensor_name}'",
                     category="sensor_read",
                     error=e,
                 )
-
             return None
+
+    def _get_sensor_value(self, sensor_name) -> float | None:
+        """Get value from any sensor by name using unified entity resolution.
+
+        When use_modbus=True, tries the Modbus entity first. If it returns None
+        (unavailable/unknown), falls back to the Growatt API entity.
+
+        Returns:
+            float: The sensor value, or None if the sensor is unavailable,
+            unknown, or could not be read.
+        """
+        try:
+            entity_id, resolution_method = self._resolve_entity_id(sensor_name)
+        except ValueError:
+            logger.warning("Could not get value for %s", sensor_name)
+            return None
+
+        logger.debug(
+            "Resolving sensor '%s' to entity '%s' (method: %s)",
+            sensor_name,
+            entity_id,
+            resolution_method,
+        )
+
+        value = self._read_ha_state(entity_id, sensor_name)
+
+        # Modbus fallback: if Modbus entity returned nothing, try Growatt API entity
+        if value is None and resolution_method == "modbus":
+            growatt_entity = self.sensors.get(sensor_name, "")
+            if growatt_entity:
+                logger.warning(
+                    "Modbus entity '%s' unavailable for '%s', falling back to Growatt API entity '%s'",
+                    entity_id,
+                    sensor_name,
+                    growatt_entity,
+                )
+                value = self._read_ha_state(growatt_entity, sensor_name)
+
+        return value
 
     def get_estimated_consumption(self):
         """Get estimated consumption in quarterly resolution (96 periods).
@@ -871,8 +916,9 @@ class HomeAssistantAPIController:
         Requires 'bdc_switch' to be configured in sensors. If not
         configured (empty string), this method returns immediately.
         """
-        entity_id = self.sensors.get("bdc_switch")
-        if not entity_id:
+        try:
+            entity_id, _ = self._resolve_entity_id("bdc_switch")
+        except ValueError:
             return
 
         option = "BDC On" if enable else "BDC Off"
@@ -895,8 +941,9 @@ class HomeAssistantAPIController:
         Requires 'export_limit_entity' to be configured in sensors. If not
         configured (empty string), this method returns immediately.
         """
-        entity_id = self.sensors.get("export_limit_entity")
-        if not entity_id:
+        try:
+            entity_id, _ = self._resolve_entity_id("export_limit_entity")
+        except ValueError:
             return
 
         option = enable_option if block else "Disabled"
@@ -1106,8 +1153,9 @@ class HomeAssistantAPIController:
         Raises:
             SystemConfigurationError: If sensor is not configured or data unavailable.
         """
-        entity_id = self.sensors.get(sensor_key)
-        if not entity_id:
+        try:
+            entity_id, _ = self._resolve_entity_id(sensor_key)
+        except ValueError:
             raise SystemConfigurationError(
                 f"Solar forecast sensor '{sensor_key}' not configured in sensors mapping"
             )

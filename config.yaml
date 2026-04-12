@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.80"
+version: "7.9.81"
 slug: "bess_manager"
 init: false
 arch:
@@ -107,47 +107,91 @@ options:
   growatt:
     device_id: "113ac8d5df0cc1d9adb83f922c0357cd"  # Growatt device ID for TOU segment operations
   sensors:
-    # === Battery Control & Status ===
-    battery_soc: "sensor.growatt_min_3600tl_xh_state_of_charge_soc"
-    battery_charge_stop_soc: "number.growatt_min_3600tl_xh_battery_charge_soc_limit"
-    battery_discharge_stop_soc: "number.growatt_min_3600tl_xh_battery_discharge_soc_limit_on_grid"
-    battery_charging_power_rate: "number.growatt_min_3600tl_xh_battery_charge_power_limit"
-    battery_discharging_power_rate: "number.growatt_min_3600tl_xh_battery_discharge_power_limit"
-    grid_charge: "switch.growatt_min_3600tl_xh_charge_from_grid"
-    bdc_switch: "select.growatt_modbus_min3600tlxh_inverter_switch"  # BDC switch for HOLD mode power saving (optional, Modbus only)
-    export_limit_entity: ""                                          # Export limit select entity for blocking export at negative prices (optional, Modbus only)
-    # === Real-time Power Sensors (Primary - Live Power Flow) ===
-    pv_power: "sensor.growatt_min_3600tl_xh_internal_wattage"        # Total solar DC production
-    local_load_power: "sensor.growatt_min_3600tl_xh_local_load_power"  # Home consumption
-    import_power: "sensor.growatt_min_3600tl_xh_import_power"        # Grid import
-    export_power: "sensor.growatt_min_3600tl_xh_export_power"        # Grid export
-    battery_charge_power: "sensor.growatt_min_3600tl_xh_battery_1_charging_w"       # Battery charging power
-    battery_discharge_power: "sensor.growatt_min_3600tl_xh_battery_1_discharging_w" # Battery discharging power
-    # === Real-time Power Sensors (Advanced/Diagnostic - not required) ===
-    output_power: "sensor.growatt_min_3600tl_xh_output_power"        # Output power
-    self_power: "sensor.growatt_min_3600tl_xh_self_power"            # Solar contributing to AC loads
-    system_power: "sensor.growatt_min_3600tl_xh_system_power"        # System power throughput
-    # === Grid Current & Voltage Monitoring (not required) ===
-    current_l1: "sensor.p1_meter_current_phase_1"                    # Phase 1 current
-    current_l2: "sensor.p1_meter_current_phase_2"                    # Phase 2 current
-    current_l3: "sensor.p1_meter_current_phase_3"                    # Phase 3 current
-    voltage_l1: "sensor.p1_meter_voltage_phase_1"                    # Phase 1 voltage
-    voltage_l2: "sensor.p1_meter_voltage_phase_2"                    # Phase 2 voltage
-    voltage_l3: "sensor.p1_meter_voltage_phase_3"                    # Phase 3 voltage
-    # === Lifetime Energy Totals ===
-    lifetime_solar_energy: "sensor.growatt_min_3600tl_xh_lifetime_total_solar_energy"
-    lifetime_load_consumption: "sensor.growatt_min_3600tl_xh_lifetime_total_load_consumption"
-    lifetime_self_consumption: "sensor.growatt_min_3600tl_xh_lifetime_self_consumption"
-    lifetime_import_from_grid: "sensor.p1_meter_energy_import"
-    lifetime_export_to_grid: "sensor.p1_meter_energy_export"
-    lifetime_battery_charged: "sensor.growatt_min_3600tl_xh_lifetime_total_battery_1_charged"
-    lifetime_battery_discharged: "sensor.growatt_min_3600tl_xh_lifetime_total_battery_1_discharged"
-    lifetime_system_production: "sensor.growatt_min_3600tl_xh_lifetime_system_production"
-    ev_energy_meter: ""                                               # EV charging energy (lifetime)
-    # === Solar & Consumption Forecasting ===
-    48h_avg_grid_import: "sensor.48h_average_grid_import_power"       # 48h average consumption
-    solar_forecast_today: "sensor.solcast_pv_forecast_forecast_today" # Today's solar forecast
-    solar_forecast_tomorrow: "sensor.solcast_pv_forecast_forecast_tomorrow" # Tomorrow's solar forecast
+    use_modbus: false                # Use Modbus entities when available; Growatt API as fallback
+    growatt:
+      # === Battery Control & Status ===
+      battery_soc: "sensor.growatt_min_3600tl_xh_state_of_charge_soc"
+      battery_charge_stop_soc: "number.growatt_min_3600tl_xh_battery_charge_soc_limit"
+      battery_discharge_stop_soc: "number.growatt_min_3600tl_xh_battery_discharge_soc_limit_on_grid"
+      battery_charging_power_rate: "number.growatt_min_3600tl_xh_battery_charge_power_limit"
+      battery_discharging_power_rate: "number.growatt_min_3600tl_xh_battery_discharge_power_limit"
+      grid_charge: "switch.growatt_min_3600tl_xh_charge_from_grid"
+      bdc_switch: ""                 # No Growatt API equivalent (Modbus only)
+      export_limit_entity: ""        # No Growatt API equivalent (Modbus only)
+      # === Real-time Power Sensors (Primary - Live Power Flow) ===
+      pv_power: "sensor.growatt_min_3600tl_xh_internal_wattage"        # Total solar DC production
+      local_load_power: "sensor.growatt_min_3600tl_xh_local_load_power"  # Home consumption
+      import_power: "sensor.growatt_min_3600tl_xh_import_power"        # Grid import
+      export_power: "sensor.growatt_min_3600tl_xh_export_power"        # Grid export
+      battery_charge_power: "sensor.growatt_min_3600tl_xh_battery_1_charging_w"       # Battery charging power
+      battery_discharge_power: "sensor.growatt_min_3600tl_xh_battery_1_discharging_w" # Battery discharging power
+      # === Real-time Power Sensors (Advanced/Diagnostic - not required) ===
+      output_power: "sensor.growatt_min_3600tl_xh_output_power"        # Output power
+      self_power: "sensor.growatt_min_3600tl_xh_self_power"            # Solar contributing to AC loads
+      system_power: "sensor.growatt_min_3600tl_xh_system_power"        # System power throughput
+      # === Grid Current & Voltage Monitoring (not required) ===
+      current_l1: "sensor.p1_meter_current_phase_1"                    # Phase 1 current
+      current_l2: "sensor.p1_meter_current_phase_2"                    # Phase 2 current
+      current_l3: "sensor.p1_meter_current_phase_3"                    # Phase 3 current
+      voltage_l1: "sensor.p1_meter_voltage_phase_1"                    # Phase 1 voltage
+      voltage_l2: "sensor.p1_meter_voltage_phase_2"                    # Phase 2 voltage
+      voltage_l3: "sensor.p1_meter_voltage_phase_3"                    # Phase 3 voltage
+      # === Lifetime Energy Totals ===
+      lifetime_solar_energy: "sensor.growatt_min_3600tl_xh_lifetime_total_solar_energy"
+      lifetime_load_consumption: "sensor.growatt_min_3600tl_xh_lifetime_total_load_consumption"
+      lifetime_self_consumption: "sensor.growatt_min_3600tl_xh_lifetime_self_consumption"
+      lifetime_import_from_grid: "sensor.p1_meter_energy_import"
+      lifetime_export_to_grid: "sensor.p1_meter_energy_export"
+      lifetime_battery_charged: "sensor.growatt_min_3600tl_xh_lifetime_total_battery_1_charged"
+      lifetime_battery_discharged: "sensor.growatt_min_3600tl_xh_lifetime_total_battery_1_discharged"
+      lifetime_system_production: "sensor.growatt_min_3600tl_xh_lifetime_system_production"
+      ev_energy_meter: ""                                               # EV charging energy (lifetime)
+      # === Solar & Consumption Forecasting ===
+      48h_avg_grid_import: "sensor.48h_average_grid_import_power"       # 48h average consumption
+      solar_forecast_today: "sensor.solcast_pv_forecast_forecast_today" # Today's solar forecast
+      solar_forecast_tomorrow: "sensor.solcast_pv_forecast_forecast_tomorrow" # Tomorrow's solar forecast
+    modbus:
+      # === Battery Control & Status ===
+      battery_soc: "sensor.growatt_modbus_battery_soc"
+      battery_charge_stop_soc: "sensor.growatt_modbus_min3600tlxh_ems_charging_stop_soc"
+      battery_discharge_stop_soc: "sensor.growatt_modbus_min3600tlxh_ems_discharging_stop_soc_on_grid"
+      battery_charging_power_rate: "sensor.growatt_modbus_min3600tlxh_ems_charging_rate"
+      battery_discharging_power_rate: "sensor.growatt_modbus_min3600tlxh_ems_discharging_rate"
+      grid_charge: ""                # No Modbus equivalent found
+      bdc_switch: "select.growatt_modbus_min3600tlxh_inverter_switch"
+      export_limit_entity: "select.growatt_modbus_min3600tlxh_limit_grid_export"
+      # === Real-time Power Sensors (Primary - Live Power Flow) ===
+      pv_power: "sensor.growatt_modbus_pv_power_total"                  # PV1 + PV2 combined
+      local_load_power: "sensor.growatt_modbus_total_load_power"
+      import_power: "sensor.growatt_modbus_total_import_power"
+      export_power: "sensor.growatt_modbus_total_export_power"
+      battery_charge_power: "sensor.growatt_modbus_battery_charge_power"
+      battery_discharge_power: "sensor.growatt_modbus_battery_discharge_power"
+      # === Real-time Power Sensors (Advanced/Diagnostic - not required) ===
+      output_power: "sensor.growatt_modbus_output_power"
+      self_power: ""                 # No Modbus equivalent
+      system_power: ""               # No Modbus equivalent
+      # === Grid Current & Voltage Monitoring (not required) ===
+      current_l1: ""                 # No Modbus equivalent (P1 meter)
+      current_l2: ""                 # No Modbus equivalent (P1 meter)
+      current_l3: ""                 # No Modbus equivalent (P1 meter)
+      voltage_l1: ""                 # No Modbus equivalent (P1 meter)
+      voltage_l2: ""                 # No Modbus equivalent (P1 meter)
+      voltage_l3: ""                 # No Modbus equivalent (P1 meter)
+      # === Lifetime Energy Totals ===
+      lifetime_solar_energy: "sensor.growatt_modbus_total_solar_energy"
+      lifetime_load_consumption: "sensor.growatt_modbus_total_load_energy"
+      lifetime_self_consumption: ""  # No Modbus equivalent
+      lifetime_import_from_grid: ""  # No Modbus equivalent (P1 meter)
+      lifetime_export_to_grid: ""    # No Modbus equivalent (P1 meter)
+      lifetime_battery_charged: "sensor.growatt_modbus_total_battery_input_energy"
+      lifetime_battery_discharged: "sensor.growatt_modbus_total_battery_output_energy"
+      lifetime_system_production: "" # Not used in energy calculations
+      ev_energy_meter: ""            # No Modbus equivalent
+      # === Solar & Consumption Forecasting ===
+      48h_avg_grid_import: ""        # No Modbus equivalent
+      solar_forecast_today: ""       # No Modbus equivalent
+      solar_forecast_tomorrow: ""    # No Modbus equivalent
 schema:
   influxdb:
     url: str
@@ -226,38 +270,76 @@ schema:
   growatt:
     device_id: str
   sensors:
-    battery_soc: str
-    battery_charge_power: str
-    battery_discharge_power: str
-    battery_charge_stop_soc: str
-    battery_discharge_stop_soc: str
-    battery_charging_power_rate: str
-    battery_discharging_power_rate: str
-    grid_charge: str
-    bdc_switch: str?
-    export_limit_entity: str?
-    current_l1: str
-    current_l2: str
-    current_l3: str
-    voltage_l1: str?
-    voltage_l2: str?
-    voltage_l3: str?
-    lifetime_battery_charged: str
-    lifetime_battery_discharged: str
-    lifetime_solar_energy: str
-    lifetime_export_to_grid: str
-    lifetime_load_consumption: str
-    lifetime_import_from_grid: str
-    lifetime_system_production: str
-    lifetime_self_consumption: str
-    ev_energy_meter: str
-    48h_avg_grid_import: str
-    solar_forecast_today: str
-    solar_forecast_tomorrow: str?
-    pv_power: str
-    local_load_power: str
-    import_power: str
-    export_power: str
-    output_power: str
-    self_power: str
-    system_power: str
+    use_modbus: bool?
+    growatt:
+      battery_soc: str
+      battery_charge_power: str
+      battery_discharge_power: str
+      battery_charge_stop_soc: str
+      battery_discharge_stop_soc: str
+      battery_charging_power_rate: str
+      battery_discharging_power_rate: str
+      grid_charge: str
+      bdc_switch: str?
+      export_limit_entity: str?
+      current_l1: str
+      current_l2: str
+      current_l3: str
+      voltage_l1: str?
+      voltage_l2: str?
+      voltage_l3: str?
+      lifetime_battery_charged: str
+      lifetime_battery_discharged: str
+      lifetime_solar_energy: str
+      lifetime_export_to_grid: str
+      lifetime_load_consumption: str
+      lifetime_import_from_grid: str
+      lifetime_system_production: str
+      lifetime_self_consumption: str
+      ev_energy_meter: str
+      48h_avg_grid_import: str
+      solar_forecast_today: str
+      solar_forecast_tomorrow: str?
+      pv_power: str
+      local_load_power: str
+      import_power: str
+      export_power: str
+      output_power: str
+      self_power: str
+      system_power: str
+    modbus:
+      battery_soc: str?
+      battery_charge_power: str?
+      battery_discharge_power: str?
+      battery_charge_stop_soc: str?
+      battery_discharge_stop_soc: str?
+      battery_charging_power_rate: str?
+      battery_discharging_power_rate: str?
+      grid_charge: str?
+      bdc_switch: str?
+      export_limit_entity: str?
+      current_l1: str?
+      current_l2: str?
+      current_l3: str?
+      voltage_l1: str?
+      voltage_l2: str?
+      voltage_l3: str?
+      lifetime_battery_charged: str?
+      lifetime_battery_discharged: str?
+      lifetime_solar_energy: str?
+      lifetime_export_to_grid: str?
+      lifetime_load_consumption: str?
+      lifetime_import_from_grid: str?
+      lifetime_system_production: str?
+      lifetime_self_consumption: str?
+      ev_energy_meter: str?
+      48h_avg_grid_import: str?
+      solar_forecast_today: str?
+      solar_forecast_tomorrow: str?
+      pv_power: str?
+      local_load_power: str?
+      import_power: str?
+      export_power: str?
+      output_power: str?
+      self_power: str?
+      system_power: str?

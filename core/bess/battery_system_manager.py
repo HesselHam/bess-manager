@@ -807,7 +807,9 @@ class BatterySystemManager:
         from .influxdb_helper import get_power_sensor_data_batch
 
         sensors_config = self._addon_options.get("sensors", {})
-        target_sensor = sensors_config.get("local_load_power", "")
+        # Support both new nested structure (sensors.growatt.*) and old flat (sensors.*)
+        growatt_config = sensors_config.get("growatt", {})
+        target_sensor = growatt_config.get("local_load_power") or sensors_config.get("local_load_power", "")
         if not target_sensor:
             raise ValueError(
                 "influxdb_7d_avg strategy requires 'local_load_power' sensor configured"

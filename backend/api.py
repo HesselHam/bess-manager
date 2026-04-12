@@ -1150,13 +1150,14 @@ async def get_inverter_status():
 
         battery_settings = bess_controller.system.battery_settings
 
-        # Get current battery mode from schedule for current hour
+        # Get current battery mode from schedule for current period
         current_battery_mode = "load_first"  # Default
         try:
-            current_hour = datetime.now().hour
+            now = datetime.now()
+            current_period = now.hour * 4 + now.minute // 15
             schedule_manager = bess_controller.system._schedule_manager
-            hourly_settings = schedule_manager.get_hourly_settings(current_hour)
-            current_battery_mode = hourly_settings.get("batt_mode", "load_first")
+            intent = schedule_manager.strategic_intents[current_period]
+            current_battery_mode = schedule_manager.INTENT_TO_MODE.get(intent, "load_first")
         except Exception as e:
             logger.warning(f"Failed to get current battery mode: {e}")
 
@@ -1238,13 +1239,13 @@ async def get_growatt_detailed_schedule():
 
         for hour in range(24):
             try:
-                hourly_settings = schedule_manager.get_hourly_settings(hour)
-                battery_mode = hourly_settings.get("batt_mode", "load_first")
+                period = hour * 4
+                period_control = schedule_manager.get_period_control(period)
+                strategic_intent = schedule_manager.strategic_intents[period]
+                battery_mode = schedule_manager.INTENT_TO_MODE.get(strategic_intent, "load_first")
                 mode_distribution[battery_mode] = (
                     mode_distribution.get(battery_mode, 0) + 1
                 )
-
-                strategic_intent = hourly_settings.get("strategic_intent", "IDLE")
 
                 # Determine action and color based on strategic intent
                 if strategic_intent == "GRID_CHARGING":
@@ -1277,11 +1278,9 @@ async def get_growatt_detailed_schedule():
                     logger.warning(f"Failed to get price for hour {hour}: {e}")
 
                 # Calculate or default battery-related values
-                battery_action = hourly_settings.get("battery_action", 0.0)
-                battery_charged = max(0, battery_action) if battery_action > 0 else 0
-                battery_discharged = (
-                    abs(min(0, battery_action)) if battery_action < 0 else 0
-                )
+                battery_action = 0.0
+                battery_charged = 0.0
+                battery_discharged = 0.0
                 battery_soe_kwh = 25.0  # Default SOE value in kWh
                 battery_capacity = 50.0  # Default capacity in kWh
 
@@ -1757,16 +1756,13 @@ async def get_tou_settings():
         enhanced_tou_intervals = []
         for interval in tou_intervals:
             enhanced_interval = interval.copy()
-            start_hour = int(interval["start_time"].split(":")[0])
+            start_parts = interval["start_time"].split(":")
+            start_period = int(start_parts[0]) * 4 + int(start_parts[1]) // 15
             try:
-                settings = schedule_manager.get_hourly_settings(start_hour)
+                settings = schedule_manager.get_period_control(start_period)
                 enhanced_interval["grid_charge"] = settings.get("grid_charge", False)
-                enhanced_interval["discharge_rate"] = settings.get(
-                    "discharge_rate", 100
-                )
-                enhanced_interval["strategic_intent"] = settings.get(
-                    "strategic_intent", "IDLE"
-                )
+                enhanced_interval["discharge_rate"] = settings.get("discharge_rate", 100)
+                enhanced_interval["strategic_intent"] = schedule_manager.strategic_intents[start_period]
             except Exception as e:
                 logger.error(
                     f"Error getting hourly settings for hour {start_hour}: {e}"
@@ -1824,8 +1820,9 @@ async def get_strategic_intents():
         hourly_intents = []
         for hour in range(24):
             try:
-                settings = schedule_manager.get_hourly_settings(hour)
-                intent = settings.get("strategic_intent", "IDLE")
+                period = hour * 4
+                intent = schedule_manager.strategic_intents[period]
+                period_control = schedule_manager.get_period_control(period)
                 description = (
                     schedule_manager._get_intent_description(intent)
                     if hasattr(schedule_manager, "_get_intent_description")
@@ -1837,9 +1834,9 @@ async def get_strategic_intents():
                         "hour": hour,
                         "intent": intent,
                         "description": description,
-                        "battery_action": settings.get("battery_action", 0.0),
-                        "grid_charge": settings.get("grid_charge", False),
-                        "discharge_rate": settings.get("discharge_rate", 100),
+                        "battery_action": 0.0,
+                        "grid_charge": period_control.get("grid_charge", False),
+                        "discharge_rate": period_control.get("discharge_rate", 100),
                         "is_current": hour == datetime.now().hour,
                     }
                 )

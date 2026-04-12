@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.82] - 2026-04-12
+
+### Fixed
+
+- Fix `influxdb_7d_avg` strategy failing after sensor config restructure: `local_load_power`
+  lookup now checks `sensors.growatt` subsection in addition to old flat `sensors` structure
+- Fix `get_hourly_settings` AttributeError in inverter status, detailed schedule, TOU settings
+  and strategic intents API endpoints: replaced with `get_period_control(period)` and direct
+  `strategic_intents[period]` access after the hourly aggregation was removed in v7.9.48
+
 ## [7.9.81] - 2026-04-12
 
 ### Added

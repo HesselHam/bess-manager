@@ -2242,11 +2242,11 @@ class BatterySystemManager:
         self._controller.set_inverter_time_segment(**inverter_params)
 
     def _apply_period_schedule(self, period: int, *, write_bdc: bool = True) -> None:
-        """Apply period settings by directly setting all inverter controls from plan.
+        """Apply period settings for the inverter controls from plan.
 
-        Dom instellen: every quarter, unconditionally set grid_charge, charge_rate,
-        and discharge_rate directly from INTENT_TO_CONTROL. No comparison with
-        previous state, no conditional logic.
+        Writes grid_charge, charge_rate, and discharge_rate only when the current
+        inverter state differs from the target. Reads the live HA sensor before each
+        write — sensor reads take milliseconds, writes take ~6s each via Modbus.
 
         Args:
             period: The 15-minute period index to apply settings for.
@@ -2269,6 +2269,13 @@ class BatterySystemManager:
         charge_rate = int(control["charge_rate"])
         discharge_rate = int(control["discharge_rate"])
 
+        soc = self.controller.get_battery_soc()
+        effective_charge_rate = (
+            100
+            if strategic_intent == "IDLE" and soc is not None and soc <= self.battery_settings.min_soc
+            else charge_rate
+        )
+
         hour = period // 4
         logger.info(
             "Period %d (%02d:%02d): Intent=%s → grid_charge=%s, charge=%d%%, discharge=%d%%",
@@ -2277,17 +2284,39 @@ class BatterySystemManager:
             (period % 4) * 15,
             strategic_intent,
             grid_charge,
-            charge_rate,
+            effective_charge_rate,
             discharge_rate,
         )
 
-        self.controller.set_grid_charge(grid_charge)
-        soc = self.controller.get_battery_soc()
-        if strategic_intent == "IDLE" and soc is not None and soc <= self.battery_settings.min_soc:
-            self.controller.set_charging_power_rate(100)
-        else:
-            self.controller.set_charging_power_rate(charge_rate)
-        self.controller.set_discharging_power_rate(discharge_rate)
+        # grid_charge — write only on change
+        try:
+            current_grid_charge = self.controller.grid_charge_enabled()
+            if current_grid_charge == grid_charge:
+                logger.debug("grid_charge already %s, skipping write", grid_charge)
+            else:
+                self.controller.set_grid_charge(grid_charge)
+        except Exception:
+            self.controller.set_grid_charge(grid_charge)
+
+        # charge_rate — write only on change
+        try:
+            current_charge_rate = self.controller.get_charging_power_rate()
+            if current_charge_rate is not None and int(current_charge_rate) == effective_charge_rate:
+                logger.debug("charge_rate already %d%%, skipping write", effective_charge_rate)
+            else:
+                self.controller.set_charging_power_rate(effective_charge_rate)
+        except Exception:
+            self.controller.set_charging_power_rate(effective_charge_rate)
+
+        # discharge_rate — write only on change
+        try:
+            current_discharge_rate = self.controller.get_discharging_power_rate()
+            if current_discharge_rate is not None and int(current_discharge_rate) == discharge_rate:
+                logger.debug("discharge_rate already %d%%, skipping write", discharge_rate)
+            else:
+                self.controller.set_discharging_power_rate(discharge_rate)
+        except Exception:
+            self.controller.set_discharging_power_rate(discharge_rate)
 
         # Export limit: block all export when sell price is negative, otherwise disable.
         # Written only on transitions to avoid EEPROM wear.

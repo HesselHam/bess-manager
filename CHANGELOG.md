@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.84] - 2026-04-12
+
+### Changed
+
+- Skip inverter writes in `_apply_period_schedule` when current sensor value already matches
+  target — reads live HA sensor before each write, avoids ~6s Modbus write per unchanged value
+
 ## [7.9.83] - 2026-04-12
 
 ### Fixed

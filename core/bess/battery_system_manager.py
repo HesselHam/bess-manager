@@ -1160,8 +1160,9 @@ class BatterySystemManager:
 
         Queries InfluxDB for the past 7 days of the local_load_power sensor
         and returns the 96-value weekly average profile (kWh per 15-min period).
+        Supports both power sensors (W, mean→kWh) and cumulative energy sensors (kWh, last-first delta).
         """
-        from .influxdb_helper import get_power_sensor_data_batch
+        from .influxdb_helper import detect_load_sensor_type, get_power_sensor_data_batch
 
         sensors_config = self._addon_options.get("sensors", {})
         # Support both new nested structure (sensors.growatt.*) and old flat (sensors.*)
@@ -1176,12 +1177,15 @@ class BatterySystemManager:
         if target_sensor.startswith("sensor."):
             target_sensor = target_sensor[len("sensor.") :]
 
+        sensor_mode = detect_load_sensor_type(target_sensor)
+        logger.info("influxdb_7d_avg: sensor '%s' detected as %s", target_sensor, sensor_mode)
+
         today = datetime.now(tz=time_utils.TIMEZONE).date()
         day_profiles: list[list[float]] = []
 
         for days_back in range(1, 8):
             target_date = today - timedelta(days=days_back)
-            result = get_power_sensor_data_batch([target_sensor], target_date)
+            result = get_power_sensor_data_batch([target_sensor], target_date, mode=sensor_mode)
 
             if result["status"] != "success":
                 logger.warning(

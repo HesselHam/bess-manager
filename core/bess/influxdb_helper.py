@@ -585,13 +585,49 @@ def _parse_batch_response(
     return period_data
 
 
-def get_power_sensor_data_batch(power_sensors: list[str], target_date) -> dict:
-    """Fetch average power (W) per period and convert to energy (kWh).
+def detect_load_sensor_type(entity_id: str) -> str:
+    """Return "energy" if the sensor stores cumulative kWh, "power" otherwise.
 
-    Power sensors report instantaneous wattage every ~5 minutes. By averaging
-    all readings within each 15-minute period and converting W -> kWh, we get
-    much higher resolution than cumulative energy sensors (which only increment
-    in 0.1 kWh steps).
+    Queries a single recent data point and checks the _measurement field.
+    """
+    bare_id = entity_id.removeprefix("sensor.")
+    cfg = get_influxdb_config()
+    if not all(cfg.get(k) for k in ("url", "bucket", "username", "password")):
+        _LOGGER.warning("InfluxDB config incomplete — assuming power sensor type")
+        return "power"
+    flux = (
+        f'from(bucket: "{cfg["bucket"]}")\n'
+        f"  |> range(start: -7d)\n"
+        f'  |> filter(fn: (r) => r["_measurement"] == "sensor.{bare_id}" or r["entity_id"] == "{bare_id}")\n'
+        f'  |> filter(fn: (r) => r["_field"] == "value")\n'
+        f"  |> last()\n"
+        f'  |> keep(columns: ["_measurement"])\n'
+        f"  |> limit(n: 1)"
+    )
+    try:
+        resp = requests.post(
+            url=cfg["url"],
+            auth=(cfg["username"], cfg["password"]),
+            headers={"Content-type": "application/vnd.flux", "Accept": "application/csv"},
+            data=flux,
+            timeout=10,
+        )
+        if resp.status_code == 200 and "kWh" in resp.text:
+            _LOGGER.info("detect_load_sensor_type: %s → energy (kWh)", entity_id)
+            return "energy"
+    except Exception as e:
+        _LOGGER.warning("detect_load_sensor_type error: %s — assuming power", e)
+    _LOGGER.info("detect_load_sensor_type: %s → power (W)", entity_id)
+    return "power"
+
+
+def get_power_sensor_data_batch(
+    power_sensors: list[str], target_date, mode: str = "power"
+) -> dict:
+    """Fetch sensor data per period and return kWh values.
+
+    mode="power": averages W readings per period and converts (mean_W * 0.25 / 1000).
+    mode="energy": computes last-first delta for cumulative kWh sensors.
 
     Args:
         power_sensors: List of power sensor entity IDs (without 'sensor.' prefix)
@@ -681,7 +717,9 @@ def get_power_sensor_data_batch(power_sensors: list[str], target_date) -> dict:
                 "message": f"InfluxDB error: {response.status_code}",
             }
 
-        period_data = _parse_power_batch_response(response.text, target_date, local_tz)
+        period_data = _parse_power_batch_response(
+            response.text, target_date, local_tz, mode
+        )
 
         _LOGGER.info(
             "Power sensor batch complete: got data for %d periods", len(period_data)
@@ -698,17 +736,18 @@ def get_power_sensor_data_batch(power_sensors: list[str], target_date) -> dict:
 
 
 def _parse_power_batch_response(
-    response_text: str, target_date, local_tz
+    response_text: str, target_date, local_tz, mode: str = "power"
 ) -> dict[int, dict[str, float]]:
-    """Parse power sensor response: compute mean W per period, convert to kWh.
+    """Parse sensor response into per-period kWh values.
 
-    For each 15-minute period, averages all power readings within that period
-    and converts: kWh = mean_watts * (15/60) / 1000
+    mode="power": mean_watts * 0.25 / 1000 per period.
+    mode="energy": last_value - first_value per period (cumulative kWh delta).
 
     Args:
         response_text: CSV response from InfluxDB
         target_date: The date being queried
         local_tz: Local timezone
+        mode: "power" or "energy"
 
     Returns:
         dict: {period_num: {"sensor.entity_id": kwh_value, ...}, ...}
@@ -768,12 +807,14 @@ def _parse_power_batch_response(
         except (IndexError, ValueError, TypeError):
             continue
 
-    # Convert mean W to kWh per period (15 min = 0.25 hours)
+    # Aggregate per period based on mode
     period_data: dict[int, dict[str, float]] = {}
     for sensor_name, periods in sensor_period_readings.items():
         for period, values in periods.items():
-            mean_watts = sum(values) / len(values)
-            kwh = mean_watts * 0.25 / 1000.0  # W * hours / 1000 = kWh
+            if mode == "energy":
+                kwh = max(0.0, values[-1] - values[0])  # last - first, clamp resets
+            else:
+                kwh = sum(values) / len(values) * 0.25 / 1000.0  # mean W → kWh
 
             if period not in period_data:
                 period_data[period] = {}

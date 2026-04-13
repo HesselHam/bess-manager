@@ -5,6 +5,7 @@ Complete replacement for battery_system.py that preserves ALL functionality.
 
 import logging
 import statistics
+import time as _time
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -54,6 +55,13 @@ from .time_utils import (
 from .weather import fetch_temperature_forecast
 
 logger = logging.getLogger(__name__)
+
+
+def _tou_time_to_minutes(time_str: str) -> int:
+    """Convert a TOU time string 'HH:MM' to minutes since midnight."""
+    h, m = time_str.split(":")
+    return int(h) * 60 + int(m)
+
 
 
 class BatterySystemManager:
@@ -141,6 +149,9 @@ class BatterySystemManager:
 
         # Export limit transition tracking: None = unknown (forces write on first period)
         self._export_blocked: bool | None = None
+
+        # Pending pre-calculated result (set by pre_calculate_schedule, consumed by apply_pending_schedule)
+        self._pending_result: tuple | None = None
 
         # Prediction caches (populated by _fetch_predictions)
         self._consumption_predictions: list[float] | None = None
@@ -453,6 +464,340 @@ class BatterySystemManager:
 
         except Exception as e:
             logger.error(f"Failed to update battery schedule: {e}")
+            return False
+
+    def pre_calculate_schedule(self, next_period: int) -> bool:
+        """Pre-calculate the battery schedule 45 seconds before the period boundary.
+
+        Runs DP, computes TOU diff, sleeps until T-N*7s, writes disables (current
+        period last) and the TOU segment for next_period. Stores the remaining
+        updates in _pending_result for apply_pending_schedule to consume at T.
+
+        Args:
+            next_period: The period that will start at the next boundary.
+
+        Returns:
+            True if pre-calculation succeeded.
+        """
+        if next_period < 0:
+            logger.error("pre_calculate_schedule: invalid period %d", next_period)
+            return False
+
+        today_count = get_period_count(datetime.now(tz=time_utils.TIMEZONE).date())
+        if next_period >= today_count:
+            logger.info(
+                "pre_calculate_schedule: skipping midnight boundary (next_period=%d)", next_period
+            )
+            return False
+
+        logger.info(
+            "--- PRE-CALCULATE period %d (%s) START ---",
+            next_period, format_period(next_period),
+        )
+
+        try:
+            prices, price_entries = self._get_price_data(prepare_next_day=False)
+            if not prices:
+                logger.warning("pre_calculate_schedule: no price data")
+                return False
+            logger.info("pre_calculate: price data OK (%d periods)", len(prices))
+
+            current_soc = self._get_current_battery_soc()
+            if current_soc is None:
+                logger.error("pre_calculate_schedule: failed to get SOC")
+                return False
+            logger.info("pre_calculate: SOC = %.1f%%", current_soc)
+
+            optimization_data_result = self._gather_optimization_data(
+                next_period, current_soc, False, len(prices)
+            )
+            if optimization_data_result is None:
+                logger.error("pre_calculate_schedule: failed to gather optimization data")
+                return False
+
+            optimization_period, optimization_data = optimization_data_result
+            logger.info("pre_calculate: optimization data gathered (opt_period=%d)", optimization_period)
+
+            optimization_result = self._run_optimization(
+                optimization_period, optimization_data, prices, price_entries, False
+            )
+            if optimization_result is None:
+                logger.error("pre_calculate_schedule: optimization failed")
+                return False
+            logger.info("pre_calculate: DP optimization complete")
+
+            is_first_run = self._current_schedule is None
+            schedule_result = self._create_updated_schedule(
+                optimization_period, optimization_result, prices, optimization_data, is_first_run, False
+            )
+            if schedule_result is None:
+                logger.error("pre_calculate_schedule: failed to create schedule")
+                return False
+
+            temp_schedule, temp_growatt = schedule_result
+            logger.info("pre_calculate: schedule created")
+
+            should_apply, reason = self._should_apply_schedule(
+                is_first_run, next_period, False, temp_growatt, optimization_period, temp_schedule
+            )
+            logger.info("pre_calculate: should_apply=%s reason=%s", should_apply, reason)
+
+            if not should_apply:
+                # No TOU change — update schedule manager and run BDC check with new intents
+                logger.info("pre_calculate: no TOU change — updating _schedule_manager and running BDC check")
+                self._schedule_manager = temp_growatt
+                self.check_preemptive_bdc()
+                self._pending_result = (
+                    next_period, temp_schedule, temp_growatt, False, reason,
+                    optimization_result, optimization_period, [],
+                )
+                logger.info(
+                    "--- PRE-CALCULATE period %d DONE (no TOU writes, 0 remaining) ---",
+                    next_period,
+                )
+                return True
+
+            # Compute TOU diff
+            current_tou = getattr(self._schedule_manager, "active_tou_intervals", [])
+            new_tou = temp_growatt.active_tou_intervals
+            to_disable, to_update = self._compute_tou_diff(next_period, current_tou, new_tou)
+            logger.info(
+                "pre_calculate: TOU diff — %d to_disable, %d to_update (current=%d, new=%d)",
+                len(to_disable), len(to_update), len(current_tou), len(new_tou),
+            )
+
+            # Identify the segment for next_period (begin_time == period start)
+            next_period_minute = next_period * 15
+            next_period_time = f"{next_period_minute // 60:02d}:{next_period_minute % 60:02d}"
+            period_x_segment = next(
+                (s for s in to_update if s["start_time"] == next_period_time), None
+            )
+            remaining_updates = [s for s in to_update if s is not period_x_segment]
+
+            if period_x_segment:
+                logger.info(
+                    "pre_calculate: period-x segment = %s-%s %s (will write before T)",
+                    period_x_segment["start_time"], period_x_segment["end_time"],
+                    period_x_segment["batt_mode"],
+                )
+            else:
+                logger.info("pre_calculate: no period-x segment (load_first, no TOU needed)")
+            logger.info(
+                "pre_calculate: %d remaining updates (future segments, written after T)",
+                len(remaining_updates),
+            )
+
+            # N = disables + 1 write for period x (if a segment exists for it)
+            n_writes = len(to_disable) + (1 if period_x_segment else 0)
+
+            if n_writes > 0:
+                # Determine start time: T - n_writes * 7s
+                now = datetime.now(tz=time_utils.TIMEZONE)
+                period_start = datetime.now(tz=time_utils.TIMEZONE).replace(
+                    hour=next_period_minute // 60,
+                    minute=next_period_minute % 60,
+                    second=0,
+                    microsecond=0,
+                )
+                write_start = period_start.timestamp() - n_writes * 7
+                sleep_secs = write_start - now.timestamp()
+
+                if sleep_secs > 0:
+                    logger.info(
+                        "pre_calculate: N=%d writes → sleeping %.1fs (start at T-%ds = %s)",
+                        n_writes, sleep_secs, n_writes * 7,
+                        datetime.fromtimestamp(write_start, tz=time_utils.TIMEZONE).strftime("%H:%M:%S"),
+                    )
+                    _time.sleep(sleep_secs)
+                    logger.info("pre_calculate: sleep done — starting TOU writes")
+                else:
+                    logger.warning(
+                        "pre_calculate: N=%d writes — no time to sleep (%.1fs overdue), writing immediately",
+                        n_writes, -sleep_secs,
+                    )
+
+                # Order disables: identify current period's segment (covers time right now)
+                _now = datetime.now(tz=time_utils.TIMEZONE)
+                now_minute = _now.hour * 60 + _now.minute
+
+                current_period_seg = next(
+                    (
+                        s for s in to_disable
+                        if _tou_time_to_minutes(s["start_time"]) <= now_minute
+                        < _tou_time_to_minutes(s["end_time"])
+                    ),
+                    None,
+                )
+                other_disables = [s for s in to_disable if s is not current_period_seg]
+
+                # Write future disables first, current period segment last
+                for segment in other_disables:
+                    logger.info(
+                        "pre_calculate: DISABLE TOU %s-%s %s (future segment)",
+                        segment["start_time"], segment["end_time"], segment["batt_mode"],
+                    )
+                    self._write_tou_segment(segment)
+                    logger.info(
+                        "pre_calculate: DISABLE done %s-%s",
+                        segment["start_time"], segment["end_time"],
+                    )
+
+                if current_period_seg:
+                    logger.info(
+                        "pre_calculate: DISABLE TOU %s-%s %s (current period — last disable)",
+                        current_period_seg["start_time"], current_period_seg["end_time"],
+                        current_period_seg["batt_mode"],
+                    )
+                    self._write_tou_segment(current_period_seg)
+                    logger.info(
+                        "pre_calculate: DISABLE done %s-%s",
+                        current_period_seg["start_time"], current_period_seg["end_time"],
+                    )
+
+                # Write TOU segment for next_period
+                if period_x_segment:
+                    logger.info(
+                        "pre_calculate: ENABLE period-x TOU %s-%s %s",
+                        period_x_segment["start_time"], period_x_segment["end_time"],
+                        period_x_segment["batt_mode"],
+                    )
+                    self._write_tou_segment(period_x_segment)
+                    logger.info(
+                        "pre_calculate: ENABLE done %s-%s — all pre-T TOU writes complete",
+                        period_x_segment["start_time"], period_x_segment["end_time"],
+                    )
+            else:
+                logger.info("pre_calculate: N=0 — no TOU writes needed before T")
+
+            # Update schedule manager so check_preemptive_bdc reads the new intents
+            logger.info("pre_calculate: updating _schedule_manager to new schedule")
+            self._schedule_manager = temp_growatt
+            logger.info("pre_calculate: running check_preemptive_bdc")
+            self.check_preemptive_bdc()
+            logger.info("pre_calculate: check_preemptive_bdc done")
+
+            self._pending_result = (
+                next_period, temp_schedule, temp_growatt, True, reason,
+                optimization_result, optimization_period, remaining_updates,
+            )
+            logger.info(
+                "--- PRE-CALCULATE period %d DONE — %d remaining TOU writes queued for T ---",
+                next_period, len(remaining_updates),
+            )
+            return True
+
+        except Exception as e:
+            logger.error("pre_calculate_schedule failed: %s", e)
+            self._pending_result = None
+            return False
+
+    def apply_pending_schedule(self, current_period: int) -> bool:
+        """Apply the pre-calculated schedule at the period boundary.
+
+        Called exactly at the period boundary. Applies _apply_period_schedule
+        with the new schedule, then writes any remaining TOU updates.
+        Falls back to update_battery_schedule if no pending result exists.
+
+        Args:
+            current_period: The period that just started.
+
+        Returns:
+            True if successful.
+        """
+        if current_period < 0:
+            logger.error("apply_pending_schedule: invalid period %d", current_period)
+            raise SystemConfigurationError(
+                message=f"Invalid period: {current_period} (must be non-negative)"
+            )
+
+        if self._pending_result is None:
+            logger.warning(
+                "apply_pending_schedule: no pending result for period %d — falling back to update_battery_schedule",
+                current_period,
+            )
+            return self.update_battery_schedule(current_period=current_period)
+
+        logger.info(
+            "--- APPLY-PENDING period %d (%s) START ---",
+            current_period, format_period(current_period),
+        )
+
+        is_first_run = self._current_schedule is None
+
+        try:
+            logger.info("apply_pending: handling special cases")
+            self._handle_special_cases(current_period, False)
+            logger.info("apply_pending: updating energy data")
+            self._update_energy_data(current_period, is_first_run, False)
+            logger.info("apply_pending: energy data updated")
+
+            (
+                _next_period,
+                temp_schedule,
+                temp_growatt,
+                tou_written,
+                reason,
+                optimization_result,
+                optimization_period,
+                remaining_updates,
+            ) = self._pending_result
+            self._pending_result = None
+
+            logger.info(
+                "apply_pending: pending result — tou_written=%s, reason=%s, %d remaining TOU updates",
+                tou_written, reason, len(remaining_updates),
+            )
+
+            self._current_schedule = temp_schedule
+            self._schedule_manager = temp_growatt
+
+            # Apply per-period settings immediately with new schedule
+            logger.info("apply_pending: calling _apply_period_schedule (write_bdc=True)")
+            self._apply_period_schedule(current_period, write_bdc=True)
+            logger.info("apply_pending: _apply_period_schedule done")
+
+            # Write remaining TOU updates (future segments, period x already done in pre_calculate)
+            if remaining_updates:
+                logger.info(
+                    "apply_pending: writing %d remaining TOU segments (future periods)",
+                    len(remaining_updates),
+                )
+                for segment in remaining_updates:
+                    try:
+                        logger.info(
+                            "apply_pending: ENABLE TOU %s-%s %s",
+                            segment["start_time"], segment["end_time"], segment["batt_mode"],
+                        )
+                        self._write_tou_segment(segment)
+                        logger.info(
+                            "apply_pending: ENABLE done %s-%s",
+                            segment["start_time"], segment["end_time"],
+                        )
+                    except Exception as e:
+                        logger.error("apply_pending: failed to write TOU segment %s-%s: %s",
+                                     segment["start_time"], segment["end_time"], e)
+                logger.info("apply_pending: all remaining TOU writes done")
+            else:
+                logger.info("apply_pending: no remaining TOU writes")
+
+            # Update schedule manager corruption flag if needed
+            if tou_written and temp_growatt.corruption_detected:
+                temp_growatt.corruption_detected = False
+
+            logger.info("apply_pending: capturing prediction snapshot")
+            self._capture_prediction_snapshot(
+                optimization_period=optimization_period,
+                optimization_result=optimization_result,
+            )
+            self.log_battery_schedule(current_period)
+            logger.info(
+                "--- APPLY-PENDING period %d COMPLETE ---",
+                current_period,
+            )
+            return True
+
+        except Exception as e:
+            logger.error("apply_pending_schedule failed: %s", e)
             return False
 
     def log_battery_schedule(self, current_period: int) -> None:
@@ -995,10 +1340,14 @@ class BatterySystemManager:
             energy_data = self.sensor_collector.collect_energy_data(prev_period)
 
             logger.info(
-                f"Collected energy data for period {prev_period} ({format_period(prev_period)}) - "
-                f"Solar: {energy_data.solar_production:.3f} kWh, "
-                f"Load: {energy_data.home_consumption:.3f} kWh, "
-                f"SOC: {energy_data.battery_soe_start:.1f}% → {energy_data.battery_soe_end:.1f}%"
+                "Collected energy data for period %d (%s) — "
+                "Solar: %.3f kWh, Load: %.3f kWh, "
+                "Grid↓: %.3f kWh, Grid↑: %.3f kWh, "
+                "SOE: %.2f→%.2f kWh",
+                prev_period, format_period(prev_period),
+                energy_data.solar_production, energy_data.home_consumption,
+                energy_data.grid_imported, energy_data.grid_exported,
+                energy_data.battery_soe_start, energy_data.battery_soe_end,
             )
 
             # Get prices for this period
@@ -1664,6 +2013,15 @@ class BatterySystemManager:
             # Print results table with strategic intents
             print_optimization_results(result, buy_prices, sell_prices)
 
+            # Log compact intent summary for the next 8 periods (easy to scan in logs)
+            upcoming = result.period_data[:min(8, len(result.period_data))]
+            intent_summary = "  ".join(
+                f"p{p.period}({format_period(p.period)}) {p.decision.strategic_intent[:6]} "
+                f"act={p.decision.battery_action:+.2f}"
+                for p in upcoming
+            )
+            logger.info("DP intents (next 8): %s", intent_summary)
+
             # Store full day data in result for UI
             result.input_data["full_home_consumption"] = optimization_data[
                 "full_consumption"
@@ -1987,6 +2345,72 @@ class BatterySystemManager:
             logger.warning("Schedule comparison failed: %s, applying new schedule", e)
             return True, f"Schedule comparison error: {e}"
 
+    def _compute_tou_diff(
+        self,
+        period: int,
+        current_tou: list[dict],
+        new_tou: list[dict],
+    ) -> tuple[list[dict], list[dict]]:
+        """Return (to_disable, to_update) for the given period onwards.
+
+        Extracted from _apply_schedule so pre_calculate_schedule can compute
+        the diff without writing to hardware.
+        """
+        effective_minute = period * 15
+
+        to_disable: list[dict] = []
+        to_update: list[dict] = []
+
+        if len(new_tou) == 0 and len(current_tou) > 0:
+            for current in current_tou:
+                if current.get("enabled", True):
+                    disabled = current.copy()
+                    disabled["enabled"] = False
+                    to_disable.append(disabled)
+        else:
+            for current in current_tou:
+                if _tou_time_to_minutes(current["end_time"]) >= effective_minute:
+                    has_match = any(
+                        s["start_time"] == current["start_time"]
+                        and s["end_time"] == current["end_time"]
+                        and s["batt_mode"] == current["batt_mode"]
+                        and s["enabled"] == current["enabled"]
+                        for s in new_tou
+                    )
+                    if not has_match:
+                        disabled = current.copy()
+                        disabled["enabled"] = False
+                        to_disable.append(disabled)
+
+        for segment in new_tou:
+            if _tou_time_to_minutes(segment["end_time"]) >= effective_minute:
+                existing_match = any(
+                    c["start_time"] == segment["start_time"]
+                    and c["end_time"] == segment["end_time"]
+                    and c["batt_mode"] == segment["batt_mode"]
+                    and c["enabled"] == segment["enabled"]
+                    for c in current_tou
+                )
+                if not existing_match:
+                    to_update.append(segment)
+
+        for update_seg in to_update:
+            u_start = _tou_time_to_minutes(update_seg["start_time"])
+            u_end = _tou_time_to_minutes(update_seg["end_time"])
+            for cur_seg in current_tou:
+                if any(d.get("segment_id") == cur_seg.get("segment_id") for d in to_disable):
+                    continue
+                if not cur_seg.get("enabled", True):
+                    continue
+                c_start = _tou_time_to_minutes(cur_seg["start_time"])
+                c_end = _tou_time_to_minutes(cur_seg["end_time"])
+                if u_start <= c_end and u_end >= c_start:
+                    disabled = cur_seg.copy()
+                    disabled["enabled"] = False
+                    to_disable.append(disabled)
+
+        return to_disable, to_update
+
     def _apply_schedule(
         self,
         period: int,
@@ -2029,130 +2453,20 @@ class BatterySystemManager:
             )
 
             effective_period = 0 if prepare_next_day else period
-            effective_minute = 0 if prepare_next_day else effective_period * 15
-
-            # Helper functions for minute-level time calculations
-            def start_minute(interval: dict) -> int:
-                """Get start time as minutes since midnight."""
-                parts = interval["start_time"].split(":")
-                return int(parts[0]) * 60 + int(parts[1])
-
-            def end_minute(interval: dict) -> int:
-                """Get end time as minutes since midnight."""
-                parts = interval["end_time"].split(":")
-                return int(parts[0]) * 60 + int(parts[1])
 
             # Find segments to disable and update
-            to_disable = []
-            to_update = []
-
             logger.info(
                 "Analyzing TOU changes from period %d (%02d:%02d) onwards...",
                 effective_period,
                 effective_period // 4,
                 (effective_period % 4) * 15,
             )
-
-            # CRITICAL FIX: When new schedule is empty, disable ALL current TOU segments
-            # This prevents stale schedules from persisting across restarts
-            if len(new_tou) == 0 and len(current_tou) > 0:
-                logger.warning("=" * 80)
-                logger.warning(
-                    "Empty TOU schedule detected - CLEARING ALL %d existing TOU segments from inverter",
-                    len(current_tou),
-                )
-                logger.warning(
-                    "This happens when optimization determines NO profitable charging/discharging"
-                )
-                logger.warning("=" * 80)
-
-                # Disable ALL current segments (past and future) to prevent stale schedules
-                for current in current_tou:
-                    if current.get(
-                        "enabled", True
-                    ):  # Only disable if currently enabled
-                        disabled_segment = current.copy()
-                        disabled_segment["enabled"] = False
-                        to_disable.append(disabled_segment)
-                        logger.info(
-                            "Marking ALL segments for clearing: %s-%s %s (segment_id=%s)",
-                            current["start_time"],
-                            current["end_time"],
-                            current["batt_mode"],
-                            current.get("segment_id"),
-                        )
-
-                logger.info("Total segments marked for clearing: %d", len(to_disable))
-            else:
-                # Normal case: differential update (only update future segments)
-                # Identify segments to disable (segments ending at or after effective_minute)
-                for current in current_tou:
-                    if end_minute(current) >= effective_minute:
-                        has_match = any(
-                            segment["start_time"] == current["start_time"]
-                            and segment["end_time"] == current["end_time"]
-                            and segment["batt_mode"] == current["batt_mode"]
-                            and segment["enabled"] == current["enabled"]
-                            for segment in new_tou
-                        )
-
-                        if not has_match:
-                            disabled_segment = current.copy()
-                            disabled_segment["enabled"] = False
-                            to_disable.append(disabled_segment)
-                            logger.debug(
-                                "Mark for disable: %s-%s %s",
-                                current["start_time"],
-                                current["end_time"],
-                                current["batt_mode"],
-                            )
-
-            # Identify segments to add/update (segments ending at or after effective_minute)
-            for segment in new_tou:
-                if end_minute(segment) >= effective_minute:
-                    existing_match = any(
-                        current["start_time"] == segment["start_time"]
-                        and current["end_time"] == segment["end_time"]
-                        and current["batt_mode"] == segment["batt_mode"]
-                        and current["enabled"] == segment["enabled"]
-                        for current in current_tou
-                    )
-
-                    if not existing_match:
-                        to_update.append(segment)
-                        logger.debug(
-                            "Mark for update: %s-%s %s",
-                            segment["start_time"],
-                            segment["end_time"],
-                            segment["batt_mode"],
-                        )
-
-            # Check for overlaps and add to disable list (using minute-level precision)
-            for update_segment in to_update:
-                update_start = start_minute(update_segment)
-                update_end = end_minute(update_segment)
-
-                for current_segment in current_tou:
-                    if any(
-                        d.get("segment_id") == current_segment.get("segment_id")
-                        for d in to_disable
-                    ):
-                        continue
-                    if not current_segment.get("enabled", True):
-                        continue
-
-                    current_start = start_minute(current_segment)
-                    current_end = end_minute(current_segment)
-
-                    # Check for time overlap
-                    if update_start <= current_end and update_end >= current_start:
-                        if not any(
-                            d.get("segment_id") == current_segment.get("segment_id")
-                            for d in to_disable
-                        ):
-                            disabled_segment = current_segment.copy()
-                            disabled_segment["enabled"] = False
-                            to_disable.append(disabled_segment)
+            to_disable, to_update = self._compute_tou_diff(effective_period, current_tou, new_tou)
+            logger.info(
+                "TOU diff: %d to disable, %d to update",
+                len(to_disable),
+                len(to_update),
+            )
 
             # Apply updates to hardware
             if to_disable or to_update:
@@ -2292,8 +2606,12 @@ class BatterySystemManager:
         try:
             current_grid_charge = self.controller.grid_charge_enabled()
             if current_grid_charge == grid_charge:
-                logger.debug("grid_charge already %s, skipping write", grid_charge)
+                logger.info("_apply_period_schedule: grid_charge already %s — skip", grid_charge)
             else:
+                logger.info(
+                    "_apply_period_schedule: grid_charge %s → %s — writing",
+                    current_grid_charge, grid_charge,
+                )
                 self.controller.set_grid_charge(grid_charge)
         except Exception:
             self.controller.set_grid_charge(grid_charge)
@@ -2302,8 +2620,12 @@ class BatterySystemManager:
         try:
             current_charge_rate = self.controller.get_charging_power_rate()
             if current_charge_rate is not None and int(current_charge_rate) == effective_charge_rate:
-                logger.debug("charge_rate already %d%%, skipping write", effective_charge_rate)
+                logger.info("_apply_period_schedule: charge_rate already %d%% — skip", effective_charge_rate)
             else:
+                logger.info(
+                    "_apply_period_schedule: charge_rate %s → %d%% — writing",
+                    current_charge_rate, effective_charge_rate,
+                )
                 self.controller.set_charging_power_rate(effective_charge_rate)
         except Exception:
             self.controller.set_charging_power_rate(effective_charge_rate)
@@ -2312,8 +2634,12 @@ class BatterySystemManager:
         try:
             current_discharge_rate = self.controller.get_discharging_power_rate()
             if current_discharge_rate is not None and int(current_discharge_rate) == discharge_rate:
-                logger.debug("discharge_rate already %d%%, skipping write", discharge_rate)
+                logger.info("_apply_period_schedule: discharge_rate already %d%% — skip", discharge_rate)
             else:
+                logger.info(
+                    "_apply_period_schedule: discharge_rate %s → %d%% — writing",
+                    current_discharge_rate, discharge_rate,
+                )
                 self.controller.set_discharging_power_rate(discharge_rate)
         except Exception:
             self.controller.set_discharging_power_rate(discharge_rate)
@@ -2357,7 +2683,15 @@ class BatterySystemManager:
         # Skipped on the initial pre-optimization call (write_bdc=False) to prevent
         # spurious off/on writes when the stale schedule differs from the optimized one.
         bdc_should_be_enabled = strategic_intent != "HOLD"
-        if write_bdc and bdc_should_be_enabled != self._bdc_enabled:
+        if not write_bdc:
+            logger.info("_apply_period_schedule: BDC skipped (write_bdc=False)")
+        elif bdc_should_be_enabled == self._bdc_enabled:
+            logger.info("_apply_period_schedule: BDC already %s — skip", bdc_should_be_enabled)
+        else:
+            logger.info(
+                "_apply_period_schedule: BDC %s → %s — writing",
+                self._bdc_enabled, bdc_should_be_enabled,
+            )
             try:
                 self.controller.set_bdc_state(bdc_should_be_enabled)
                 self._bdc_enabled = bdc_should_be_enabled
@@ -2679,20 +3013,36 @@ class BatterySystemManager:
         if current_period >= len(intents) or next_period >= len(intents):
             return
 
-        if intents[current_period] == "HOLD" and intents[next_period] != "HOLD":
+        current_intent = intents[current_period]
+        next_intent = intents[next_period]
+
+        if current_intent == "HOLD" and next_intent != "HOLD":
             if self._bdc_enabled is not True:
+                logger.info(
+                    "check_preemptive_bdc: HOLD→%s at p%d — sending BDC On early",
+                    next_intent, next_period,
+                )
                 try:
                     self.controller.set_bdc_state(True)
                     self._bdc_enabled = True
                     logger.info(
-                        "Preemptive BDC On: next period %d is %s",
-                        next_period,
-                        intents[next_period],
+                        "check_preemptive_bdc: BDC On sent (next period %d is %s)",
+                        next_period, next_intent,
                     )
                 except Exception:
                     logger.warning(
                         "Preemptive BDC On failed; will retry at period start"
                     )
+            else:
+                logger.info(
+                    "check_preemptive_bdc: HOLD→%s at p%d — BDC already On, skip",
+                    next_intent, next_period,
+                )
+        else:
+            logger.info(
+                "check_preemptive_bdc: p%d=%s → p%d=%s — no action",
+                current_period, current_intent, next_period, next_intent,
+            )
 
 
     def get_settings(self):

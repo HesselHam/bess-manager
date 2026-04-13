@@ -257,16 +257,28 @@ class BESSController:
     def _init_scheduler_jobs(self):
         """Configure scheduler jobs."""
 
-        # Quarterly schedule update (every 15 minutes: 0, 15, 30, 45)
-        def update_schedule_quarterly():
+        # Pre-calculate schedule 45 seconds before each period boundary
+        def pre_calculate():
             now = datetime.now()
-            current_period = now.hour * 4 + now.minute // 15
-            self.system.update_battery_schedule(current_period=current_period)
+            next_period = now.hour * 4 + now.minute // 15 + 1
+            self.system.pre_calculate_schedule(next_period)
 
         self.scheduler.add_job(
-            update_schedule_quarterly,
+            pre_calculate,
+            CronTrigger(minute="14,29,44,59"),
+            misfire_grace_time=10,
+        )
+
+        # Apply pending schedule exactly at each period boundary
+        def apply_pending():
+            now = datetime.now()
+            current_period = now.hour * 4 + now.minute // 15
+            self.system.apply_pending_schedule(current_period)
+
+        self.scheduler.add_job(
+            apply_pending,
             CronTrigger(minute="0,15,30,45"),
-            misfire_grace_time=30,  # Allow 30 seconds of misfire before warning
+            misfire_grace_time=5,
         )
 
         # Next day preparation (daily at 23:55)
@@ -295,13 +307,6 @@ class BESSController:
                 IntervalTrigger(seconds=30),
                 misfire_grace_time=5,
             )
-
-        # BDC pre-emptive: enable BDC one minute before HOLD→non-HOLD transition
-        self.scheduler.add_job(
-            self.system.check_preemptive_bdc,
-            CronTrigger(minute="14,29,44,59"),
-            misfire_grace_time=30,
-        )
 
         self.scheduler.start()
 

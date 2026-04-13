@@ -528,7 +528,8 @@ class BatterySystemManager:
 
             is_first_run = self._current_schedule is None
             schedule_result = self._create_updated_schedule(
-                optimization_period, optimization_result, prices, optimization_data, is_first_run, False
+                optimization_period, optimization_result, prices, optimization_data, is_first_run, False,
+                store_in_schedule_store=False,
             )
             if schedule_result is None:
                 logger.error("pre_calculate_schedule: failed to create schedule")
@@ -742,6 +743,17 @@ class BatterySystemManager:
                 remaining_updates,
             ) = self._pending_result
             self._pending_result = None
+
+            # Store the new schedule now — after _update_energy_data so that
+            # _get_planned_intent_for_period could read the previous schedule above.
+            self.schedule_store.store_schedule(
+                optimization_result=optimization_result,
+                optimization_period=optimization_period,
+            )
+            logger.info(
+                "apply_pending: stored new schedule (opt_period=%d) in schedule_store",
+                optimization_period,
+            )
 
             logger.info(
                 "apply_pending: pending result — tou_written=%s, reason=%s, %d remaining TOU updates",
@@ -2066,6 +2078,7 @@ class BatterySystemManager:
         optimization_data: dict[str, list[float]],
         is_first_run: bool,
         prepare_next_day: bool,
+        store_in_schedule_store: bool = True,
     ) -> tuple[DPSchedule, GrowattScheduleManager] | None:
         """Create updated schedule from OptimizationResult with strategic intents and CORRECT SOC mapping."""
 
@@ -2164,11 +2177,15 @@ class BatterySystemManager:
                 if current_soc is not None:
                     result.input_data["initial_soe"] = current_soc
 
-            # Store in schedule store - now using OptimizationResult directly
-            self.schedule_store.store_schedule(
-                optimization_result=result,
-                optimization_period=optimization_period,
-            )
+            # Store in schedule store - now using OptimizationResult directly.
+            # Skipped when called from pre_calculate_schedule so that _update_energy_data
+            # in apply_pending_schedule can still find the PREVIOUS schedule's planned
+            # intent for prev_period. apply_pending_schedule stores it after _update_energy_data.
+            if store_in_schedule_store:
+                self.schedule_store.store_schedule(
+                    optimization_result=result,
+                    optimization_period=optimization_period,
+                )
 
             # Truncate all arrays to today's period count before creating DPSchedule.
             # The optimizer may have used an extended horizon (up to 192 periods) to make

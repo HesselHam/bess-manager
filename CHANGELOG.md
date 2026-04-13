@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.86] - 2026-04-13
+
+### Fixed
+
+- Fix actual decision column showing only IDLE in Decision Details: `pre_calculate_schedule`
+  was writing the new schedule to `schedule_store` before `apply_pending_schedule` called
+  `_update_energy_data`. Since the new optimization starts at `next_period`, the range check
+  for `prev_period = current_period - 1` always failed, returning `None` → `"IDLE"` for
+  every completed period. Fix: delay `store_schedule` until after `_update_energy_data`
+
 ## [7.9.85] - 2026-04-13
 
 ### Changed

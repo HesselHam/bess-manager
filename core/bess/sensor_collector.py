@@ -7,7 +7,11 @@ from datetime import datetime, timedelta
 
 from .energy_flow_calculator import EnergyFlowCalculator
 from .health_check import perform_health_check
-from .influxdb_helper import get_power_sensor_data_batch, get_sensor_data_batch
+from .influxdb_helper import (
+    detect_load_sensor_type,
+    get_power_sensor_data_batch,
+    get_sensor_data_batch,
+)
 from .models import EnergyData
 from .settings import BatterySettings
 
@@ -70,6 +74,7 @@ class SensorCollector:
         self.power_sensors = self._resolve_power_sensor_ids()
         self._power_batch_cache: dict = {}  # {date: {period: {sensor: kwh_value}}}
         self._power_batch_cache_loaded_on: dict = {}
+        self._load_sensor_mode: str | None = None  # detected lazily: "power" or "energy"
 
     def _resolve_sensor_entity_ids(self) -> list[str]:
         """Resolve sensor keys to entity IDs using the controller's abstraction layer.
@@ -498,30 +503,52 @@ class SensorCollector:
             len(self.power_sensors),
         )
 
-        result = get_power_sensor_data_batch(self.power_sensors, target_date)
+        # Detect load sensor type once (power W vs cumulative kWh)
+        if self._load_sensor_mode is None:
+            load_entity = self.ha_controller.resolve_sensor_for_influxdb("local_load_power")
+            self._load_sensor_mode = (
+                detect_load_sensor_type(load_entity) if load_entity else "power"
+            )
 
-        if result.get("status") == "success":
-            data = result.get("data", {})
-            if not data:
+        if self._load_sensor_mode == "energy":
+            # Load sensor is cumulative kWh — fetch it separately with delta mode
+            load_entity = self.ha_controller.resolve_sensor_for_influxdb("local_load_power")
+            other_sensors = [s for s in self.power_sensors if s != load_entity]
+            merged: dict = {}
+            if other_sensors:
+                r = get_power_sensor_data_batch(other_sensors, target_date)
+                if r.get("status") == "success":
+                    merged = r["data"]
+            if load_entity:
+                r = get_power_sensor_data_batch([load_entity], target_date, mode="energy")
+                if r.get("status") == "success":
+                    for period, sensors in r["data"].items():
+                        merged.setdefault(period, {}).update(sensors)
+            data = merged
+        else:
+            result = get_power_sensor_data_batch(self.power_sensors, target_date)
+            if result.get("status") != "success":
                 logger.warning(
-                    "Power sensor batch for %s returned no periods", target_date
+                    "Failed to load power sensor batch for %s: %s",
+                    target_date.strftime("%Y-%m-%d"),
+                    result.get("message", "Unknown error"),
                 )
                 return False
-            self._power_batch_cache[target_date] = data
-            self._power_batch_cache_loaded_on[target_date] = today
-            logger.info(
-                "Power sensor batch loaded: %d periods for %s",
-                len(data),
-                target_date.strftime("%Y-%m-%d"),
-            )
-            return True
-        else:
+            data = result.get("data", {})
+
+        if not data:
             logger.warning(
-                "Failed to load power sensor batch for %s: %s",
-                target_date.strftime("%Y-%m-%d"),
-                result.get("message", "Unknown error"),
+                "Power sensor batch for %s returned no periods", target_date
             )
             return False
+        self._power_batch_cache[target_date] = data
+        self._power_batch_cache_loaded_on[target_date] = today
+        logger.info(
+            "Power sensor batch loaded: %d periods for %s",
+            len(data),
+            target_date.strftime("%Y-%m-%d"),
+        )
+        return True
 
     def _build_power_entity_to_flow_map(self) -> dict[str, str]:
         """Build mapping from power sensor entity IDs (with sensor. prefix) to flow names.

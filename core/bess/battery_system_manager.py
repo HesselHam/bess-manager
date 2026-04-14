@@ -153,6 +153,10 @@ class BatterySystemManager:
         # Pending pre-calculated result (set by pre_calculate_schedule, consumed by apply_pending_schedule)
         self._pending_result: tuple | None = None
 
+        # Cache for 21d unique-day-avg: (cache_date, all_valid_days)
+        # Reused within the same calendar day to avoid 63 InfluxDB queries per run
+        self._21d_cache: tuple[date, list[tuple[date, list[float]]]] | None = None
+
         # Prediction caches (populated by _fetch_predictions)
         self._consumption_predictions: list[float] | None = None
         self._solar_predictions: list[float] | None = None
@@ -1132,11 +1136,15 @@ class BatterySystemManager:
         except Exception as e:
             logger.warning(f"Failed to fetch predictions: {e}")
 
-    def _get_consumption_forecast(self) -> list[float]:
+    def _get_consumption_forecast(self, target_date: date | None = None) -> list[float]:
         """Get consumption forecast based on the configured strategy.
 
         Dispatches to the appropriate data source based on
         home_settings.consumption_strategy.
+
+        Args:
+            target_date: The date for which to forecast consumption. Only used by
+                strategies that vary by day of week. Defaults to today.
 
         Returns:
             List of 96 float values (kWh per 15-minute period).
@@ -1152,6 +1160,10 @@ class BatterySystemManager:
 
         if strategy == "influxdb_7d_avg":
             return self._get_influxdb_7d_avg_forecast()
+
+        if strategy == "influxdb_21d_unique_day_avg":
+            forecast_date = target_date or datetime.now(tz=time_utils.TIMEZONE).date()
+            return self._get_influxdb_21d_unique_day_avg_forecast(forecast_date)
 
         raise ValueError(f"Unknown consumption_strategy: '{strategy}'")
 
@@ -1222,6 +1234,104 @@ class BatterySystemManager:
             "InfluxDB 7-day average profile: %.1f kWh/day from %d days of data",
             total_kwh,
             len(day_profiles),
+        )
+
+        return avg_profile
+
+    def _get_influxdb_21d_unique_day_avg_forecast(self, target_date: date) -> list[float]:
+        """Get consumption forecast from InfluxDB 21-day unique-day-of-week average profile.
+
+        Queries InfluxDB for the past 21 days of the lifetime_load_consumption sensor.
+        Requires at least 14 valid days of history; falls back to influxdb_7d_avg otherwise.
+        Returns the average profile for days matching target_date's day of week.
+        """
+        from .influxdb_helper import get_power_sensor_data_batch
+
+        sensors_config = self._addon_options.get("sensors", {})
+        growatt_config = sensors_config.get("growatt", {})
+        target_sensor = growatt_config.get("lifetime_load_consumption") or sensors_config.get(
+            "lifetime_load_consumption", ""
+        )
+        if not target_sensor:
+            raise ValueError(
+                "influxdb_21d_unique_day_avg strategy requires 'lifetime_load_consumption' sensor configured"
+            )
+
+        if target_sensor.startswith("sensor."):
+            target_sensor = target_sensor[len("sensor."):]
+
+        today = datetime.now(tz=time_utils.TIMEZONE).date()
+        target_weekday = target_date.weekday()  # 0=Monday, 6=Sunday
+        weekday_name = target_date.strftime("%A")
+
+        # Use cached 21-day data if already fetched today (avoids 63 queries per run)
+        if self._21d_cache is not None and self._21d_cache[0] == today:
+            all_valid_days = self._21d_cache[1]
+        else:
+            # Collect all valid day profiles from the past 21 days
+            all_valid_days = []
+
+            for days_back in range(1, 22):
+                check_date = today - timedelta(days=days_back)
+                result = get_power_sensor_data_batch([target_sensor], check_date, mode="energy")
+
+                if result["status"] != "success":
+                    logger.warning(
+                        "Failed to fetch power data for %s: %s",
+                        check_date,
+                        result.get("message", "unknown error"),
+                    )
+                    continue
+
+                period_data = result["data"]
+                sensor_key = f"sensor.{target_sensor}"
+                profile = [0.0] * 96
+                periods_found = 0
+                for period in range(96):
+                    if period in period_data and sensor_key in period_data[period]:
+                        profile[period] = period_data[period][sensor_key]
+                        periods_found += 1
+
+                if periods_found >= 48:
+                    all_valid_days.append((check_date, profile))
+                    logger.debug("Got %d periods for %s", periods_found, check_date)
+
+            self._21d_cache = (today, all_valid_days)
+
+        # Fall back to 7-day avg if insufficient history
+        if len(all_valid_days) < 14:
+            logger.warning(
+                "influxdb_21d_unique_day_avg: only %d valid days found (need 14), "
+                "falling back to influxdb_7d_avg",
+                len(all_valid_days),
+            )
+            return self._get_influxdb_7d_avg_forecast()
+
+        # Filter to days matching the target weekday
+        matching_profiles = [
+            profile for check_date, profile in all_valid_days
+            if check_date.weekday() == target_weekday
+        ]
+
+        if not matching_profiles:
+            logger.warning(
+                "influxdb_21d_unique_day_avg: no %s data found in history, "
+                "using all-day average as fallback",
+                weekday_name,
+            )
+            matching_profiles = [profile for _, profile in all_valid_days]
+
+        avg_profile = [
+            sum(p[i] for p in matching_profiles) / len(matching_profiles)
+            for i in range(96)
+        ]
+
+        total_kwh = sum(avg_profile)
+        logger.info(
+            "InfluxDB 21d unique day avg (%s): %.1f kWh/day from %d matching days",
+            weekday_name,
+            total_kwh,
+            len(matching_profiles),
         )
 
         return avg_profile
@@ -1523,7 +1633,8 @@ class BatterySystemManager:
 
         if prepare_next_day:
             # For next day, use predictions only
-            consumption_predictions = self._get_consumption_forecast()
+            tomorrow = date.today() + timedelta(days=1)
+            consumption_predictions = self._get_consumption_forecast(tomorrow)
             solar_predictions = self.controller.get_solar_forecast()
 
             consumption_data = consumption_predictions
@@ -1542,14 +1653,15 @@ class BatterySystemManager:
             completed_periods = [
                 i for i, p in enumerate(today_periods) if p is not None
             ]
-            predictions_consumption = self._get_consumption_forecast()
+            today = date.today()
+            predictions_consumption = self._get_consumption_forecast(today)
             consumption_forecast_ref = predictions_consumption
             predictions_solar = self.controller.get_solar_forecast()
 
             # Extend predictions for tomorrow when horizon exceeds today
             if period_count > len(predictions_consumption):
-                # Consumption: repeat today's uniform pattern for tomorrow
-                tomorrow_consumption = predictions_consumption.copy()
+                tomorrow = today + timedelta(days=1)
+                tomorrow_consumption = self._get_consumption_forecast(tomorrow)
                 predictions_consumption = predictions_consumption + tomorrow_consumption
                 logger.info(
                     "Extended consumption predictions to %d periods for tomorrow horizon",
@@ -1572,12 +1684,14 @@ class BatterySystemManager:
                     )
                 predictions_solar = predictions_solar + tomorrow_solar
 
-            # Add third buffer day (proxy = tomorrow) for DP horizon extension.
+            # Add third buffer day for DP horizon extension.
             # Matches the third buffer day added in _get_price_data().
             if period_count > len(predictions_consumption):
-                predictions_consumption = predictions_consumption + predictions_consumption[-96:]
+                day_after_tomorrow = today + timedelta(days=2)
+                buffer_consumption = self._get_consumption_forecast(day_after_tomorrow)
+                predictions_consumption = predictions_consumption + buffer_consumption
                 logger.info(
-                    "Added 96 buffer consumption periods (day 3 proxy, total: %d)",
+                    "Added 96 buffer consumption periods (day 3, total: %d)",
                     len(predictions_consumption),
                 )
 

@@ -5,22 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.9.89] - 2026-04-14
+## [7.9.90] - 2026-04-14
 
 ### Fixed
 
-- Decision Details actual Verbruik now uses cumulative kWh load sensor (e.g. `total_home_load_energy`)
-  as primary source instead of `lifetime_load_consumption` (0.1 kWh resolution). When
-  `local_load_power` is detected as a kWh sensor, its per-period delta always overrides the
-  coarse cumulative flow value.
-
-## [7.9.88] - 2026-04-14
-
-### Fixed
-
-- Decision Details actual load now supports cumulative energy sensors (kWh) in addition
-  to power sensors (W) for `local_load_power`. Sensor type is auto-detected once at first
-  use; energy sensors are fetched as last-first delta per period.
+- Decision Details actual Verbruik now uses `local_load_power` kWh sensor (e.g.
+  `total_home_load_energy`) as primary `load_consumption` source when it is detected as a
+  cumulative energy sensor at startup. This replaces `lifetime_load_consumption` (0.1 kWh
+  resolution) with a high-resolution delta. Replaces the broken override approach from
+  v7.9.88–v7.9.89 with a clean cumulative-sensor integration.
 
 ## [7.9.87] - 2026-04-13
 

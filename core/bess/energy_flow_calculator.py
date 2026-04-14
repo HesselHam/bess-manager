@@ -39,6 +39,7 @@ class EnergyFlowCalculator:
             "lifetime_import_from_grid": "import_from_grid",
             "lifetime_export_to_grid": "export_to_grid",
             "lifetime_load_consumption": "load_consumption",
+            "local_load_power": "load_consumption",  # kWh sensor overrides coarse lifetime value
             "lifetime_system_production": "system_production",
             "lifetime_self_consumption": "self_consumption",
             "ev_energy_meter": "aux_load",

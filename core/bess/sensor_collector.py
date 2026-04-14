@@ -7,11 +7,7 @@ from datetime import datetime, timedelta
 
 from .energy_flow_calculator import EnergyFlowCalculator
 from .health_check import perform_health_check
-from .influxdb_helper import (
-    detect_load_sensor_type,
-    get_power_sensor_data_batch,
-    get_sensor_data_batch,
-)
+from .influxdb_helper import get_power_sensor_data_batch, get_sensor_data_batch
 from .models import EnergyData
 from .settings import BatterySettings
 
@@ -58,6 +54,15 @@ class SensorCollector:
             "battery_soc",
         ]
 
+        # If local_load_power is a cumulative kWh sensor, treat it as cumulative (higher
+        # resolution than lifetime_load_consumption which has 0.1 kWh steps).
+        load_entity = ha_controller.resolve_sensor_for_influxdb("local_load_power")
+        if load_entity:
+            from .influxdb_helper import detect_load_sensor_type
+            if detect_load_sensor_type(load_entity) == "energy":
+                self.cumulative_sensor_keys.append("local_load_power")
+                logger.info("local_load_power detected as kWh sensor — added to cumulative sensors")
+
         # Resolve to actual entity IDs for InfluxDB queries
         self.cumulative_sensors = self._resolve_sensor_entity_ids()
 
@@ -74,7 +79,6 @@ class SensorCollector:
         self.power_sensors = self._resolve_power_sensor_ids()
         self._power_batch_cache: dict = {}  # {date: {period: {sensor: kwh_value}}}
         self._power_batch_cache_loaded_on: dict = {}
-        self._load_sensor_mode: str | None = None  # detected lazily: "power" or "energy"
 
     def _resolve_sensor_entity_ids(self) -> list[str]:
         """Resolve sensor keys to entity IDs using the controller's abstraction layer.
@@ -117,7 +121,6 @@ class SensorCollector:
         return resolved_ids
 
     def collect_energy_data(self, period: int, date_offset: int = 0) -> EnergyData:
-        original_date_offset = date_offset
         """Collect sensor data for a period and create EnergyData with automatic detailed flows.
 
         Uses simple cache approach for runtime: current_live - cached_last = delta.
@@ -264,14 +267,6 @@ class SensorCollector:
                     period,
                     {k: f"{v:.4f}" for k, v in power_flows.items() if v > 0.001},
                 )
-
-        # If local_load_power is a cumulative kWh sensor (higher resolution than lifetime_load_consumption
-        # which has 0.1 kWh steps), always prefer its delta as the load_consumption value.
-        if self._load_sensor_mode == "energy":
-            load_date = now.date() + timedelta(days=original_date_offset)
-            power_flows = self._get_power_based_flows(period, load_date)
-            if power_flows and "load_consumption" in power_flows:
-                flow_dict["load_consumption"] = power_flows["load_consumption"]
 
         # Extract BOTH SOC readings from sensors - NO DEFAULTS
         # Use abstraction layer to resolve battery SOC sensor entity ID (without 'sensor.' prefix)
@@ -512,38 +507,15 @@ class SensorCollector:
             len(self.power_sensors),
         )
 
-        # Detect load sensor type once (power W vs cumulative kWh)
-        if self._load_sensor_mode is None:
-            load_entity = self.ha_controller.resolve_sensor_for_influxdb("local_load_power")
-            self._load_sensor_mode = (
-                detect_load_sensor_type(load_entity) if load_entity else "power"
+        result = get_power_sensor_data_batch(self.power_sensors, target_date)
+        if result.get("status") != "success":
+            logger.warning(
+                "Failed to load power sensor batch for %s: %s",
+                target_date.strftime("%Y-%m-%d"),
+                result.get("message", "Unknown error"),
             )
-
-        if self._load_sensor_mode == "energy":
-            # Load sensor is cumulative kWh — fetch it separately with delta mode
-            load_entity = self.ha_controller.resolve_sensor_for_influxdb("local_load_power")
-            other_sensors = [s for s in self.power_sensors if s != load_entity]
-            merged: dict = {}
-            if other_sensors:
-                r = get_power_sensor_data_batch(other_sensors, target_date)
-                if r.get("status") == "success":
-                    merged = r["data"]
-            if load_entity:
-                r = get_power_sensor_data_batch([load_entity], target_date, mode="energy")
-                if r.get("status") == "success":
-                    for period, sensors in r["data"].items():
-                        merged.setdefault(period, {}).update(sensors)
-            data = merged
-        else:
-            result = get_power_sensor_data_batch(self.power_sensors, target_date)
-            if result.get("status") != "success":
-                logger.warning(
-                    "Failed to load power sensor batch for %s: %s",
-                    target_date.strftime("%Y-%m-%d"),
-                    result.get("message", "Unknown error"),
-                )
-                return False
-            data = result.get("data", {})
+            return False
+        data = result.get("data", {})
 
         if not data:
             logger.warning(

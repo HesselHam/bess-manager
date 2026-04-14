@@ -74,8 +74,6 @@ const DecisionsPage: React.FC = () => {
 
   useEffect(() => {
     fetchData(true);
-    const interval = setInterval(() => fetchData(false), 60000);
-    return () => clearInterval(interval);
   }, [fetchData]);
 
   const fmtDual = (planned: number, actual: number | null, d = 3, showZero = false) => {

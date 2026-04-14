@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.96] - 2026-04-14
+
+### Changed
+
+- Simplified `_get_current_battery_soc`: removed unreachable `if self._controller` guard and
+  redundant fallback warning — controller is always present per deterministic design principle.
+
 ## [7.9.95] - 2026-04-14
 
 ### Changed

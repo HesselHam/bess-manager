@@ -1487,23 +1487,13 @@ class BatterySystemManager:
     def _get_current_battery_soc(self) -> float | None:
         """Get current battery SOC with validation."""
         try:
-            if self._controller:
-                soc = self._controller.get_battery_soc()
-                if soc is not None and 0 <= soc <= 100:
-                    return soc
-                else:
-                    logger.warning(f"Invalid SOC from controller: {soc}")
-
-            # TODO: Remove this fallback - it appears to never be used in practice
-            # If we reach here, the controller failed to provide valid SOC
-            logger.warning(
-                "Controller failed to provide valid SOC. This fallback code path "
-                "should be investigated and potentially removed if never used."
-            )
-            return None  # Return None to indicate failure rather than using unreliable fallback
-
+            soc = self._controller.get_battery_soc()
+            if soc is None or not 0 <= soc <= 100:
+                logger.warning("Invalid SOC from controller: %s", soc)
+                return None
+            return soc
         except Exception as e:
-            logger.error(f"Failed to get battery SOC: {e}")
+            logger.error("Failed to get battery SOC: %s", e)
             return None
 
     def _gather_optimization_data(

@@ -117,6 +117,7 @@ class SensorCollector:
         return resolved_ids
 
     def collect_energy_data(self, period: int, date_offset: int = 0) -> EnergyData:
+        original_date_offset = date_offset
         """Collect sensor data for a period and create EnergyData with automatic detailed flows.
 
         Uses simple cache approach for runtime: current_live - cached_last = delta.
@@ -263,6 +264,14 @@ class SensorCollector:
                     period,
                     {k: f"{v:.4f}" for k, v in power_flows.items() if v > 0.001},
                 )
+
+        # If local_load_power is a cumulative kWh sensor (higher resolution than lifetime_load_consumption
+        # which has 0.1 kWh steps), always prefer its delta as the load_consumption value.
+        if self._load_sensor_mode == "energy":
+            load_date = now.date() + timedelta(days=original_date_offset)
+            power_flows = self._get_power_based_flows(period, load_date)
+            if power_flows and "load_consumption" in power_flows:
+                flow_dict["load_consumption"] = power_flows["load_consumption"]
 
         # Extract BOTH SOC readings from sensors - NO DEFAULTS
         # Use abstraction layer to resolve battery SOC sensor entity ID (without 'sensor.' prefix)

@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.98] - 2026-04-15
+
+### Added
+
+- New consumption strategy `influxdb_21d_unique_day_avg`: averages the last 3 occurrences of
+  each weekday (Monday = average of 3 Mondays, Saturday = 3 Saturdays, etc.) over a 21-day
+  lookback window. Requires at least 14 valid days of history; falls back to `influxdb_7d_avg`
+  otherwise. Multi-day DP horizon (today/tomorrow/day-after-tomorrow) each use their correct
+  weekday profile. Existing strategies unchanged.
+
 ## [7.9.97] - 2026-04-14
 
 ### Fixed

@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.93] - 2026-04-14
+
+### Fixed
+
+- Fix kWh load sensor detection marking itself done when InfluxDB returns "power" during
+  startup (before InfluxDB is reachable). Detection now only sets `_load_sensor_detected=True`
+  on confirmed "energy" result — retries every batch load until it succeeds.
+
 ## [7.9.92] - 2026-04-14
 
 ### Fixed

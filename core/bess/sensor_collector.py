@@ -409,12 +409,13 @@ class SensorCollector:
             self._load_sensor_detected = True
             return
         try:
-            if detect_load_sensor_type(load_entity) == "energy" and load_entity not in self.cumulative_sensors:
-                self.cumulative_sensors.append(load_entity)
-                self._batch_cache.clear()
-                self._batch_cache_loaded_on.clear()
-                logger.info("local_load_power (%s) detected as kWh sensor — added to cumulative batch", load_entity)
-            self._load_sensor_detected = True
+            if detect_load_sensor_type(load_entity) == "energy":
+                if load_entity not in self.cumulative_sensors:
+                    self.cumulative_sensors.append(load_entity)
+                    self._batch_cache.clear()
+                    self._batch_cache_loaded_on.clear()
+                    logger.info("local_load_power (%s) detected as kWh sensor — added to cumulative batch", load_entity)
+                self._load_sensor_detected = True  # only mark done on confirmed energy type
         except Exception as e:
             logger.warning("load sensor detection failed, will retry: %s", e)
 

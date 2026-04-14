@@ -153,6 +153,10 @@ class BatterySystemManager:
         # Pending pre-calculated result (set by pre_calculate_schedule, consumed by apply_pending_schedule)
         self._pending_result: tuple | None = None
 
+        # Cache for 21d unique-day-avg: (cache_date, all_valid_days)
+        # Reused within the same calendar day to avoid 63 InfluxDB queries per run
+        self._21d_cache: tuple[date, list[tuple[date, list[float]]]] | None = None
+
         # Prediction caches (populated by _fetch_predictions)
         self._consumption_predictions: list[float] | None = None
         self._solar_predictions: list[float] | None = None
@@ -1260,33 +1264,39 @@ class BatterySystemManager:
         target_weekday = target_date.weekday()  # 0=Monday, 6=Sunday
         weekday_name = target_date.strftime("%A")
 
-        # Collect all valid day profiles from the past 21 days
-        all_valid_days: list[tuple[date, list[float]]] = []
+        # Use cached 21-day data if already fetched today (avoids 63 queries per run)
+        if self._21d_cache is not None and self._21d_cache[0] == today:
+            all_valid_days = self._21d_cache[1]
+        else:
+            # Collect all valid day profiles from the past 21 days
+            all_valid_days = []
 
-        for days_back in range(1, 22):
-            check_date = today - timedelta(days=days_back)
-            result = get_power_sensor_data_batch([target_sensor], check_date, mode="energy")
+            for days_back in range(1, 22):
+                check_date = today - timedelta(days=days_back)
+                result = get_power_sensor_data_batch([target_sensor], check_date, mode="energy")
 
-            if result["status"] != "success":
-                logger.warning(
-                    "Failed to fetch power data for %s: %s",
-                    check_date,
-                    result.get("message", "unknown error"),
-                )
-                continue
+                if result["status"] != "success":
+                    logger.warning(
+                        "Failed to fetch power data for %s: %s",
+                        check_date,
+                        result.get("message", "unknown error"),
+                    )
+                    continue
 
-            period_data = result["data"]
-            sensor_key = f"sensor.{target_sensor}"
-            profile = [0.0] * 96
-            periods_found = 0
-            for period in range(96):
-                if period in period_data and sensor_key in period_data[period]:
-                    profile[period] = period_data[period][sensor_key]
-                    periods_found += 1
+                period_data = result["data"]
+                sensor_key = f"sensor.{target_sensor}"
+                profile = [0.0] * 96
+                periods_found = 0
+                for period in range(96):
+                    if period in period_data and sensor_key in period_data[period]:
+                        profile[period] = period_data[period][sensor_key]
+                        periods_found += 1
 
-            if periods_found >= 48:
-                all_valid_days.append((check_date, profile))
-                logger.debug("Got %d periods for %s", periods_found, check_date)
+                if periods_found >= 48:
+                    all_valid_days.append((check_date, profile))
+                    logger.debug("Got %d periods for %s", periods_found, check_date)
+
+            self._21d_cache = (today, all_valid_days)
 
         # Fall back to 7-day avg if insufficient history
         if len(all_valid_days) < 14:

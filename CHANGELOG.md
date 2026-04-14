@@ -5,6 +5,26 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.95] - 2026-04-14
+
+### Changed
+
+- `influxdb_7d_avg` consumption strategy now reads `lifetime_load_consumption` (cumulative kWh sensor)
+  instead of `local_load_power` (W sensor), enabling use of `sensor.total_home_load_energy` for
+  higher-resolution 7-day average forecasts.
+
+### Removed
+
+- Removed load sensor type detection infrastructure (`detect_load_sensor_type`, `_detect_and_register_load_sensor`,
+  `_load_sensor_detected`) — no longer needed now that `lifetime_load_consumption` is the designated
+  cumulative load sensor config key.
+- Removed `local_load_power` → `load_consumption` mapping from `energy_flow_calculator` — `lifetime_load_consumption`
+  is the correct source for load consumption energy flows.
+- Deleted unused frontend components `EnergySankeyChart` and `TableBatteryDecisionExplorer`.
+- Removed never-called `_load_and_apply_settings()` from `app.py`.
+- Removed duplicate `camel_to_snake()` from `api_conversion.py`.
+- Removed debug logging block from `_create_updated_schedule` in `battery_system_manager.py`.
+
 ## [7.9.94] - 2026-04-14
 
 ### Fixed

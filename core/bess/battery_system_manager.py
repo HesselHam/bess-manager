@@ -1158,34 +1158,30 @@ class BatterySystemManager:
     def _get_influxdb_7d_avg_forecast(self) -> list[float]:
         """Get consumption forecast from InfluxDB 7-day average profile.
 
-        Queries InfluxDB for the past 7 days of the local_load_power sensor
+        Queries InfluxDB for the past 7 days of the lifetime_load_consumption sensor
         and returns the 96-value weekly average profile (kWh per 15-min period).
-        Supports both power sensors (W, mean→kWh) and cumulative energy sensors (kWh, last-first delta).
         """
-        from .influxdb_helper import detect_load_sensor_type, get_power_sensor_data_batch
+        from .influxdb_helper import get_power_sensor_data_batch
 
         sensors_config = self._addon_options.get("sensors", {})
         # Support both new nested structure (sensors.growatt.*) and old flat (sensors.*)
         growatt_config = sensors_config.get("growatt", {})
-        target_sensor = growatt_config.get("local_load_power") or sensors_config.get("local_load_power", "")
+        target_sensor = growatt_config.get("lifetime_load_consumption") or sensors_config.get("lifetime_load_consumption", "")
         if not target_sensor:
             raise ValueError(
-                "influxdb_7d_avg strategy requires 'local_load_power' sensor configured"
+                "influxdb_7d_avg strategy requires 'lifetime_load_consumption' sensor configured"
             )
 
         # Strip 'sensor.' prefix if present — get_power_sensor_data_batch adds it
         if target_sensor.startswith("sensor."):
             target_sensor = target_sensor[len("sensor.") :]
 
-        sensor_mode = detect_load_sensor_type(target_sensor)
-        logger.info("influxdb_7d_avg: sensor '%s' detected as %s", target_sensor, sensor_mode)
-
         today = datetime.now(tz=time_utils.TIMEZONE).date()
         day_profiles: list[list[float]] = []
 
         for days_back in range(1, 8):
             target_date = today - timedelta(days=days_back)
-            result = get_power_sensor_data_batch([target_sensor], target_date, mode=sensor_mode)
+            result = get_power_sensor_data_batch([target_sensor], target_date, mode="energy")
 
             if result["status"] != "success":
                 logger.warning(
@@ -2087,11 +2083,6 @@ class BatterySystemManager:
         """Create updated schedule from OptimizationResult with strategic intents and CORRECT SOC mapping."""
 
         try:
-            logger.info("=== SCHEDULE CREATION DEBUG START ===")
-            logger.info(
-                f"optimization_period: {optimization_period} ({format_period(optimization_period)}), prepare_next_day: {prepare_next_day}"
-            )
-
             # Extract PeriodData (actually period data) directly from OptimizationResult
             period_data_list = result.period_data
 
@@ -2099,15 +2090,6 @@ class BatterySystemManager:
             combined_soe = optimization_data["combined_soe"].copy()
             combined_actions = optimization_data["combined_actions"].copy()
             solar_charged = optimization_data["solar_charged"].copy()
-
-            logger.info(
-                f"Initial SOE from optimization_data: {combined_soe[optimization_period:optimization_period+3]}"
-            )
-
-            # Only update the periods that were actually optimized
-            logger.info(
-                f"Got {len(period_data_list)} period data objects from optimization"
-            )
 
             # Use actual array length for DST safety (92/96/100 periods)
             num_periods = len(combined_soe)
@@ -2122,20 +2104,6 @@ class BatterySystemManager:
                     )
                     # Store the SOE directly (it's already in the correct format from period data)
                     combined_soe[target_period] = period_data.energy.battery_soe_end
-
-            # Log the corrected SOE progression
-            logger.info("CORRECTED SOE progression:")
-            for p in range(
-                max(0, optimization_period - 1),
-                min(num_periods, optimization_period + 4),
-            ):
-                soc_percent = (
-                    combined_soe[p] / self.battery_settings.total_capacity
-                ) * 100
-                action = combined_actions[p]
-                logger.info(
-                    f"  Period {p}: SOE={combined_soe[p]:.1f}kWh ({soc_percent:.1f}%), Action={action:.1f}kW"
-                )
 
             # Create strategic intents array from OptimizationResult
             # DP intents are authoritative - do NOT override with inferred intents from historical data

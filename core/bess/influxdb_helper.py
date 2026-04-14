@@ -585,41 +585,6 @@ def _parse_batch_response(
     return period_data
 
 
-def detect_load_sensor_type(entity_id: str) -> str:
-    """Return "energy" if the sensor stores cumulative kWh, "power" otherwise.
-
-    Queries a single recent data point and checks the _measurement field.
-    """
-    bare_id = entity_id.removeprefix("sensor.")
-    cfg = get_influxdb_config()
-    if not all(cfg.get(k) for k in ("url", "bucket", "username", "password")):
-        _LOGGER.warning("InfluxDB config incomplete — assuming power sensor type")
-        return "power"
-    flux = (
-        f'from(bucket: "{cfg["bucket"]}")\n'
-        f"  |> range(start: -7d)\n"
-        f'  |> filter(fn: (r) => r["_measurement"] == "sensor.{bare_id}" or r["entity_id"] == "{bare_id}")\n'
-        f'  |> filter(fn: (r) => r["_field"] == "value")\n'
-        f"  |> last()\n"
-        f'  |> keep(columns: ["_measurement"])\n'
-        f"  |> limit(n: 1)"
-    )
-    try:
-        resp = requests.post(
-            url=cfg["url"],
-            auth=(cfg["username"], cfg["password"]),
-            headers={"Content-type": "application/vnd.flux", "Accept": "application/csv"},
-            data=flux,
-            timeout=10,
-        )
-        if resp.status_code == 200 and "kWh" in resp.text:
-            _LOGGER.info("detect_load_sensor_type: %s → energy (kWh)", entity_id)
-            return "energy"
-    except Exception as e:
-        _LOGGER.warning("detect_load_sensor_type error: %s — assuming power", e)
-    _LOGGER.info("detect_load_sensor_type: %s → power (W)", entity_id)
-    return "power"
-
 
 def get_power_sensor_data_batch(
     power_sensors: list[str], target_date, mode: str = "power"

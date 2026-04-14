@@ -211,24 +211,6 @@ class BESSController:
             growatt_device_id=growatt_device_id,
         )
 
-    def _load_and_apply_settings(self):
-        """Load options and apply settings.
-
-        This method is kept for backwards compatibility, but all settings should now be
-        applied early during initialization using _apply_settings().
-        """
-        try:
-            options = self._load_options()
-            if options:
-                logger.debug(
-                    "Reapplying settings from _load_and_apply_settings (redundant)"
-                )
-                self._apply_settings(options)
-            else:
-                logger.warning("No options found when reapplying settings")
-        except Exception as e:
-            logger.error(f"Error reloading settings: {e}", exc_info=True)
-
     def _load_options(self):
         """Load options from Home Assistant add-on standard location.
 

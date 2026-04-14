@@ -11,12 +11,6 @@ def snake_to_camel(snake_str: str) -> str:
     return components[0] + "".join(word.capitalize() for word in components[1:])
 
 
-def camel_to_snake(camel_str: str) -> str:
-    """Convert camelCase to snake_case."""
-    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", camel_str)
-    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
-
-
 def convert_keys_to_camel_case(data: Any) -> Any:
     """Recursively convert all dict keys from snake_case to camelCase."""
     if isinstance(data, dict):

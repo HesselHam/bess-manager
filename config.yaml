@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.110"
+version: "7.9.111"
 slug: "bess_manager"
 init: false
 arch:
@@ -36,7 +36,7 @@ options:
     voltage: 230                    # Line voltage in volts
     safety_margin_factor: 0.95      # Safety margin for power calculations
     phase_count: 3                  # Number of electrical phases (1 for single-phase, 3 for three-phase)
-    inverter_phase: "3"
+    inverter_phase: "L3"
   battery:
     total_capacity: 7.5              # kWh
     min_soc: 10                      # Minimum state of charge (%) - synced to inverter on startup

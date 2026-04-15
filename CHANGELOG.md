@@ -5,6 +5,17 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.111] - 2026-04-15
+
+### Fixed
+
+- Fix Decision Details actual Verbruik showing 0.1 kWh steps. Detect `local_load_power`
+  type at `SensorCollector` startup; if kWh sensor, add to `cumulative_sensor_keys` so
+  `energy_flow_calculator` uses its delta as `load_consumption`, overriding the coarse
+  `lifetime_load_consumption` (0.1 kWh resolution). Also adds `local_load_power` mapping
+  to `energy_flow_calculator` sensor map. Replaces incorrect lazy-detection approach from
+  v7.9.110.
+
 ## [7.9.110] - 2026-04-15
 
 ### Fixed

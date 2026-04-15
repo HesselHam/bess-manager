@@ -54,9 +54,17 @@ class SensorCollector:
             "battery_soc",
         ]
 
+        # If local_load_power is a cumulative kWh sensor, treat it as cumulative (higher
+        # resolution than lifetime_load_consumption which has 0.1 kWh steps).
+        load_entity = ha_controller.resolve_sensor_for_influxdb("local_load_power")
+        if load_entity:
+            from .influxdb_helper import detect_load_sensor_type
+            if detect_load_sensor_type(load_entity) == "energy":
+                self.cumulative_sensor_keys.append("local_load_power")
+                logger.info("local_load_power detected as kWh sensor — added to cumulative sensors")
+
         # Resolve to actual entity IDs for InfluxDB queries
         self.cumulative_sensors = self._resolve_sensor_entity_ids()
-        self._load_sensor_detected = False  # lazy: detect on first batch load when InfluxDB is ready
 
         # Power sensors (W) for high-resolution gap-filling
         # Maps power sensor keys to the same flow names used by energy_flow_calculator
@@ -396,33 +404,6 @@ class SensorCollector:
             battery_soe_end=soe,
         )
 
-    def _detect_and_register_load_sensor(self) -> None:
-        """Detect local_load_power sensor type and add to cumulative_sensors if kWh.
-
-        Runs lazily on first batch load so InfluxDB is guaranteed to be reachable.
-        Clears batch cache on success so the next fetch includes the new sensor.
-        """
-        from .influxdb_helper import detect_load_sensor_type
-
-        load_entity = self.ha_controller.resolve_sensor_for_influxdb("local_load_power")
-        if not load_entity:
-            logger.info("local_load_power not configured — skipping kWh detection")
-            self._load_sensor_detected = True
-            return
-        logger.info("Detecting load sensor type for: %s", load_entity)
-        try:
-            sensor_type = detect_load_sensor_type(load_entity)
-            logger.info("local_load_power (%s) detected as: %s", load_entity, sensor_type)
-            if sensor_type == "energy":
-                if load_entity not in self.cumulative_sensors:
-                    self.cumulative_sensors.append(load_entity)
-                    self._batch_cache.clear()
-                    self._batch_cache_loaded_on.clear()
-                    logger.info("local_load_power (%s) added to cumulative batch", load_entity)
-                self._load_sensor_detected = True
-        except Exception as e:
-            logger.warning("load sensor detection failed, will retry: %s", e)
-
     def _ensure_batch_data_loaded(self, target_date) -> bool:
         """Ensure batch data is loaded for the target date.
 
@@ -437,9 +418,6 @@ class SensorCollector:
         Returns:
             True if data was loaded successfully, False otherwise
         """
-        if not self._load_sensor_detected:
-            self._detect_and_register_load_sensor()
-
         today = datetime.now().date()
 
         # Check if already cached

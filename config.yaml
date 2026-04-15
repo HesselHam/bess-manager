@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.105"
+version: "7.9.109"
 slug: "bess_manager"
 init: false
 arch:
@@ -78,6 +78,7 @@ options:
     export_postprocess_reorder: false  # After DP: reassign EXPORT to highest-price periods in each sell window (robust fix)
     discharge_tiebreaker_enabled: false  # Break near-ties in favour of LOAD_SUPPORT at high buy prices
     discharge_tiebreaker_epsilon: 0.003  # Epsilon bonus (in currency) added to LOAD_SUPPORT value when buy > cost_basis
+    load_forecast_sensor: ""             # Sensor entity ID used for DP consumption forecast (W or kWh sensor, auto-detected)
     consumption_rounding_enabled: false  # Round DP consumption input up to nearest step (true/false)
     consumption_rounding_step: 0.025     # Rounding step in kWh (e.g. 0.025)
     load_segments:
@@ -241,6 +242,7 @@ schema:
     export_postprocess_reorder: bool?
     discharge_tiebreaker_enabled: bool?
     discharge_tiebreaker_epsilon: float?
+    load_forecast_sensor: str?
     consumption_rounding_enabled: bool?
     consumption_rounding_step: float?
     load_segments:

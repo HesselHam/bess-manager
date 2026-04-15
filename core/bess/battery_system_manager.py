@@ -1170,30 +1170,32 @@ class BatterySystemManager:
     def _get_influxdb_7d_avg_forecast(self) -> list[float]:
         """Get consumption forecast from InfluxDB 7-day average profile.
 
-        Queries InfluxDB for the past 7 days of the lifetime_load_consumption sensor
+        Queries InfluxDB for the past 7 days of the configured load_forecast_sensor
         and returns the 96-value weekly average profile (kWh per 15-min period).
+        Sensor type (W or kWh) is auto-detected via detect_load_sensor_type.
         """
-        from .influxdb_helper import get_power_sensor_data_batch
+        from .influxdb_helper import detect_load_sensor_type, get_power_sensor_data_batch
 
-        sensors_config = self._addon_options.get("sensors", {})
-        # Support both new nested structure (sensors.growatt.*) and old flat (sensors.*)
-        growatt_config = sensors_config.get("growatt", {})
-        target_sensor = growatt_config.get("lifetime_load_consumption") or sensors_config.get("lifetime_load_consumption", "")
+        dp_config = self._addon_options.get("dp", {})
+        target_sensor = dp_config.get("load_forecast_sensor", "")
         if not target_sensor:
             raise ValueError(
-                "influxdb_7d_avg strategy requires 'lifetime_load_consumption' sensor configured"
+                "influxdb_7d_avg strategy requires 'dp.load_forecast_sensor' sensor configured"
             )
 
         # Strip 'sensor.' prefix if present — get_power_sensor_data_batch adds it
         if target_sensor.startswith("sensor."):
-            target_sensor = target_sensor[len("sensor.") :]
+            target_sensor = target_sensor[len("sensor."):]
+
+        sensor_mode = detect_load_sensor_type(target_sensor)
+        logger.info("influxdb_7d_avg: using sensor %s (mode=%s)", target_sensor, sensor_mode)
 
         today = datetime.now(tz=time_utils.TIMEZONE).date()
         day_profiles: list[list[float]] = []
 
         for days_back in range(1, 8):
             target_date = today - timedelta(days=days_back)
-            result = get_power_sensor_data_batch([target_sensor], target_date, mode="energy")
+            result = get_power_sensor_data_batch([target_sensor], target_date, mode=sensor_mode)
 
             if result["status"] != "success":
                 logger.warning(
@@ -1241,24 +1243,25 @@ class BatterySystemManager:
     def _get_influxdb_21d_unique_day_avg_forecast(self, target_date: date) -> list[float]:
         """Get consumption forecast from InfluxDB 21-day unique-day-of-week average profile.
 
-        Queries InfluxDB for the past 21 days of the lifetime_load_consumption sensor.
+        Queries InfluxDB for the past 21 days of the configured load_forecast_sensor.
         Requires at least 14 valid days of history; falls back to influxdb_7d_avg otherwise.
         Returns the average profile for days matching target_date's day of week.
+        Sensor type (W or kWh) is auto-detected via detect_load_sensor_type.
         """
-        from .influxdb_helper import get_power_sensor_data_batch
+        from .influxdb_helper import detect_load_sensor_type, get_power_sensor_data_batch
 
-        sensors_config = self._addon_options.get("sensors", {})
-        growatt_config = sensors_config.get("growatt", {})
-        target_sensor = growatt_config.get("lifetime_load_consumption") or sensors_config.get(
-            "lifetime_load_consumption", ""
-        )
+        dp_config = self._addon_options.get("dp", {})
+        target_sensor = dp_config.get("load_forecast_sensor", "")
         if not target_sensor:
             raise ValueError(
-                "influxdb_21d_unique_day_avg strategy requires 'lifetime_load_consumption' sensor configured"
+                "influxdb_21d_unique_day_avg strategy requires 'dp.load_forecast_sensor' sensor configured"
             )
 
         if target_sensor.startswith("sensor."):
             target_sensor = target_sensor[len("sensor."):]
+
+        sensor_mode = detect_load_sensor_type(target_sensor)
+        logger.info("influxdb_21d_unique_day_avg: using sensor %s (mode=%s)", target_sensor, sensor_mode)
 
         today = datetime.now(tz=time_utils.TIMEZONE).date()
         target_weekday = target_date.weekday()  # 0=Monday, 6=Sunday
@@ -1273,7 +1276,7 @@ class BatterySystemManager:
 
             for days_back in range(1, 22):
                 check_date = today - timedelta(days=days_back)
-                result = get_power_sensor_data_batch([target_sensor], check_date, mode="energy")
+                result = get_power_sensor_data_batch([target_sensor], check_date, mode=sensor_mode)
 
                 if result["status"] != "success":
                     logger.warning(

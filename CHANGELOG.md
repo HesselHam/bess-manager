@@ -5,6 +5,25 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.109] - 2026-04-15
+
+### Fixed
+
+- Consumption forecast (`influxdb_7d_avg`, `influxdb_21d_unique_day_avg`) no longer uses the
+  Growatt cumulative kWh sensor (`lifetime_load_consumption`). That sensor has 0.1 kWh resolution
+  and writes only on value change, causing 1–2 readings per 15-min period. With `mode="energy"`
+  (last − first within the period) this produced values of exactly 1/70 ≈ 0.0143 kWh — a tiny
+  fraction of the actual ~0.11 kWh per period.
+
+### Added
+
+- New `dp.load_forecast_sensor` config option: set the sensor entity ID that the DP optimizer
+  uses for its consumption forecast. Accepts both W (power) sensors and cumulative kWh sensors;
+  the type is auto-detected via an InfluxDB `_measurement` field query.
+- `detect_load_sensor_type(entity_id)` in `influxdb_helper.py`: queries a single recent data
+  point and returns `"energy"` (kWh sensor) or `"power"` (W sensor). Falls back to `"power"`
+  if InfluxDB is unreachable.
+
 ## [7.9.105] - 2026-04-15
 
 ### Added

@@ -38,7 +38,6 @@ class EnergyFlowCalculator:
             "lifetime_solar_energy": "solar_production",
             "lifetime_import_from_grid": "import_from_grid",
             "lifetime_export_to_grid": "export_to_grid",
-            "lifetime_load_consumption": "load_consumption",
             "lifetime_system_production": "system_production",
             "lifetime_self_consumption": "self_consumption",
             "ev_energy_meter": "aux_load",

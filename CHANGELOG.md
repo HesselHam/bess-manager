@@ -5,6 +5,12 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.102] - 2026-04-15
+
+### Fixed
+
+- Log HA response body on final API failure to diagnose 500 errors.
+
 ## [7.9.101] - 2026-04-15
 
 ### Added

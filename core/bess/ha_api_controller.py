@@ -620,6 +620,7 @@ class HomeAssistantAPIController:
                             response_body = e.response.text[:500]
                             if response_body:
                                 enriched_context["response_body"] = response_body
+                                logger.error("Response body: %s", response_body)
 
                         self.failure_tracker.record_failure(
                             operation=operation_description,

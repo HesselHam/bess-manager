@@ -647,6 +647,12 @@ def _run_dynamic_programming(
                 ):
                     continue
 
+                # SOLAR_STORAGE requires solar: without it, the mode degenerates to
+                # HOLD (no battery action, all load from grid). Skip to avoid
+                # a misleading intent label when there is nothing to store.
+                if mode == "SOLAR_STORAGE" and solar_production[t] <= 0.01:
+                    continue
+
                 # GRID_CHARGING is blocked when solar production exceeds the threshold
                 # (solar alone can charge the battery) or when there is insufficient
                 # headroom for a meaningful charge action.

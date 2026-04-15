@@ -114,7 +114,7 @@ class HomeAssistantAPIController:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
-        self.max_attempts = 4
+        self.max_attempts = 1
         self.retry_base_delay = 2  # seconds (exponential backoff: 2, 4, 8)
         self.test_mode = False
 

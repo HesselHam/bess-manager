@@ -65,6 +65,7 @@ class SensorCollector:
             if detect_load_sensor_type(bare_entity) == "energy":
                 if bare_entity not in self.cumulative_sensors:
                     self.cumulative_sensors.append(bare_entity)
+                self.cumulative_sensor_keys.append("load_forecast_sensor")
                 self.energy_flow_calculator.sensor_to_flow_map[bare_entity] = "load_consumption"
                 logger.info("dp.load_forecast_sensor (%s) added as load_consumption source", bare_entity)
 
@@ -644,6 +645,7 @@ class SensorCollector:
             "lifetime_self_consumption": "get_self_consumption_lifetime",
             "ev_energy_meter": "get_ev_energy",
             "battery_soc": "get_battery_soc",
+            "load_forecast_sensor": "get_load_forecast_sensor",
         }
 
         for sensor_key in self.cumulative_sensor_keys:

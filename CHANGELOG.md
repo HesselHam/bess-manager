@@ -5,6 +5,15 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.114] - 2026-04-15
+
+### Fixed
+
+- `sensor_collector.py`, `ha_api_controller.py`, `app.py`: `dp.load_forecast_sensor` now
+  goes through the same pipeline as all other cumulative sensors in the runtime path.
+  Previously, actual load consumption showed `—` in Decision Details for real-time collected
+  periods because `total_home_load_energy` was not read in `_get_period_readings_from_live_sensors`.
+
 ## [7.9.113] - 2026-04-15
 
 ### Changed

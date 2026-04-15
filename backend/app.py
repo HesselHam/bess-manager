@@ -120,6 +120,9 @@ class BESSController:
         use_modbus = sensors_section.get("use_modbus", False)
         growatt_config = options.get("growatt", {})
         growatt_device_id = growatt_config.get("device_id")
+        load_forecast_sensor = options.get("dp", {}).get("load_forecast_sensor", "")
+        if load_forecast_sensor:
+            growatt_sensors["load_forecast_sensor"] = load_forecast_sensor
         self.ha_controller = self._init_ha_controller(
             growatt_sensors, modbus_sensors, use_modbus, growatt_device_id
         )

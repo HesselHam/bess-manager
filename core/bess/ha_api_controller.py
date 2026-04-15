@@ -1346,6 +1346,10 @@ class HomeAssistantAPIController:
         """Get lifetime total load consumption energy in kWh."""
         return self._get_sensor_value("lifetime_load_consumption")
 
+    def get_load_forecast_sensor(self):
+        """Get current value of the configured load forecast sensor in kWh."""
+        return self._get_sensor_value("load_forecast_sensor")
+
     def get_system_production_lifetime(self):
         """Get lifetime total system production energy in kWh."""
         return self._get_sensor_value("lifetime_system_production")

@@ -5,6 +5,14 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.110] - 2026-04-15
+
+### Fixed
+
+- Restore `_detect_and_register_load_sensor` in `sensor_collector.py` — accidentally removed
+  in v7.9.95. Decision Details actual consumption (Verbruik column) now correctly detects
+  whether `local_load_power` is a kWh sensor and uses it for high-resolution actual values.
+
 ## [7.9.109] - 2026-04-15
 
 ### Fixed

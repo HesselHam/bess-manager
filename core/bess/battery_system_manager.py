@@ -597,7 +597,7 @@ class BatterySystemManager:
             n_writes = len(to_disable) + (1 if period_x_segment else 0)
 
             if n_writes > 0:
-                # Determine start time: T - n_writes * 7s
+                # Determine start time: T - n_writes * 2s
                 now = datetime.now(tz=time_utils.TIMEZONE)
                 period_start = datetime.now(tz=time_utils.TIMEZONE).replace(
                     hour=next_period_minute // 60,
@@ -605,13 +605,13 @@ class BatterySystemManager:
                     second=0,
                     microsecond=0,
                 )
-                write_start = period_start.timestamp() - n_writes * 7
+                write_start = period_start.timestamp() - n_writes * 2
                 sleep_secs = write_start - now.timestamp()
 
                 if sleep_secs > 0:
                     logger.info(
                         "pre_calculate: N=%d writes → sleeping %.1fs (start at T-%ds = %s)",
-                        n_writes, sleep_secs, n_writes * 7,
+                        n_writes, sleep_secs, n_writes * 2,
                         datetime.fromtimestamp(write_start, tz=time_utils.TIMEZONE).strftime("%H:%M:%S"),
                     )
                     _time.sleep(sleep_secs)

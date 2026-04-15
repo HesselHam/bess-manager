@@ -5,6 +5,16 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.112] - 2026-04-15
+
+### Changed
+
+- `dp.load_forecast_sensor` is now used for both DP consumption forecast and Decision Details
+  actual Verbruik. Sensor type is auto-detected at startup; if kWh, its delta per period
+  overrides the coarse `lifetime_load_consumption` (0.1 kWh steps) as `load_consumption`.
+  Removed `local_load_power` from W-sensor gap-filling map — it was incorrectly treated as
+  a W sensor when configured as kWh.
+
 ## [7.9.111] - 2026-04-15
 
 ### Fixed

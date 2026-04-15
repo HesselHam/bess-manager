@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class SensorCollector:
     """Collects sensor data from InfluxDB and calculates energy flows with strategic intent reconstruction."""
 
-    def __init__(self, ha_controller, battery_settings: BatterySettings):
+    def __init__(self, ha_controller, battery_settings: BatterySettings, load_forecast_sensor: str = ""):
         """Initialize sensor collector.
 
         Args:
@@ -54,23 +54,24 @@ class SensorCollector:
             "battery_soc",
         ]
 
-        # If local_load_power is a cumulative kWh sensor, treat it as cumulative (higher
-        # resolution than lifetime_load_consumption which has 0.1 kWh steps).
-        load_entity = ha_controller.resolve_sensor_for_influxdb("local_load_power")
-        if load_entity:
-            from .influxdb_helper import detect_load_sensor_type
-            if detect_load_sensor_type(load_entity) == "energy":
-                self.cumulative_sensor_keys.append("local_load_power")
-                logger.info("local_load_power detected as kWh sensor — added to cumulative sensors")
-
         # Resolve to actual entity IDs for InfluxDB queries
         self.cumulative_sensors = self._resolve_sensor_entity_ids()
+
+        # If dp.load_forecast_sensor is a kWh sensor, use it as load_consumption source
+        # (higher resolution than lifetime_load_consumption which has 0.1 kWh steps).
+        if load_forecast_sensor:
+            bare_entity = load_forecast_sensor.removeprefix("sensor.")
+            from .influxdb_helper import detect_load_sensor_type
+            if detect_load_sensor_type(bare_entity) == "energy":
+                if bare_entity not in self.cumulative_sensors:
+                    self.cumulative_sensors.append(bare_entity)
+                self.energy_flow_calculator.sensor_to_flow_map[bare_entity] = "load_consumption"
+                logger.info("dp.load_forecast_sensor (%s) added as load_consumption source", bare_entity)
 
         # Power sensors (W) for high-resolution gap-filling
         # Maps power sensor keys to the same flow names used by energy_flow_calculator
         self.power_sensor_flow_map: dict[str, str] = {
             "pv_power": "solar_production",
-            "local_load_power": "load_consumption",
             "import_power": "import_from_grid",
             "export_power": "export_to_grid",
             "battery_charge_power": "battery_charged",

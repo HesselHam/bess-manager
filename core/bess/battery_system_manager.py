@@ -110,7 +110,8 @@ class BatterySystemManager:
         self.prediction_snapshot_store = PredictionSnapshotStore()
 
         # Initialize specialized components
-        self.sensor_collector = SensorCollector(controller, self.battery_settings)
+        load_forecast_sensor = self._addon_options.get("dp", {}).get("load_forecast_sensor", "")
+        self.sensor_collector = SensorCollector(controller, self.battery_settings, load_forecast_sensor)
 
         # Initialize view builder
         self.daily_view_builder = DailyViewBuilder(

@@ -5,6 +5,12 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.104] - 2026-04-15
+
+### Changed
+
+- Revert to v7.9.97 baseline (remove 21d strategy and diagnostic changes).
+
 ## [7.9.103] - 2026-04-15
 
 ### Changed

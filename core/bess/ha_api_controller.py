@@ -114,7 +114,7 @@ class HomeAssistantAPIController:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
-        self.max_attempts = 1
+        self.max_attempts = 4
         self.retry_base_delay = 2  # seconds (exponential backoff: 2, 4, 8)
         self.test_mode = False
 
@@ -620,7 +620,6 @@ class HomeAssistantAPIController:
                             response_body = e.response.text[:500]
                             if response_body:
                                 enriched_context["response_body"] = response_body
-                                logger.error("Response body: %s", response_body)
 
                         self.failure_tracker.record_failure(
                             operation=operation_description,

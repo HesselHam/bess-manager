@@ -5,13 +5,6 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.9.117] - 2026-04-16
-
-### Changed
-
-- Decision Details: renamed columns (Kosten→Real Cost, Baseline→Cost Grid Only, Besparing→Savings, Reward→DP Reward) and reordered to Cost Grid Only, Real Cost, Savings, DP Reward.
-- models.py: Savings now calculated as `grid_only_cost − hourly_cost` (was `solar_only_cost − hourly_cost`), reflecting true savings vs no-battery/no-solar baseline.
-
 ## [7.9.116] - 2026-04-16
 
 ### Changed

@@ -13,6 +13,7 @@ interface LoadProfileResponse {
 }
 
 const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899'];
+const DAY_NAMES = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
 
 const periodToTime = (period: number): string => {
   const h = Math.floor(period / 4).toString().padStart(2, '0');
@@ -20,11 +21,17 @@ const periodToTime = (period: number): string => {
   return `${h}:${m}`;
 };
 
+const formatDateLabel = (date: string): string => {
+  const d = new Date(date + 'T00:00:00');
+  return `${DAY_NAMES[d.getDay()]} ${date}`;
+};
+
 const LoadProfilePage: React.FC = () => {
   const [data, setData] = useState<LoadProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [hiddenDays, setHiddenDays] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
@@ -44,6 +51,18 @@ const LoadProfilePage: React.FC = () => {
   useEffect(() => {
     fetchData(true);
   }, [fetchData]);
+
+  const toggleDay = (date: string) => {
+    setHiddenDays(prev => {
+      const next = new Set(prev);
+      if (next.has(date)) {
+        next.delete(date);
+      } else {
+        next.add(date);
+      }
+      return next;
+    });
+  };
 
   // Build chart data: one entry per period with all days as keys
   const chartData = React.useMemo(() => {
@@ -96,6 +115,26 @@ const LoadProfilePage: React.FC = () => {
         </div>
       ) : data ? (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          {/* Custom legend with toggles */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {data.days.map((day, idx) => {
+              const hidden = hiddenDays.has(day.date);
+              return (
+                <button
+                  key={day.date}
+                  onClick={() => toggleDay(day.date)}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-opacity ${hidden ? 'opacity-30' : 'opacity-100'}`}
+                >
+                  <span
+                    className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                  />
+                  {formatDateLabel(day.date)}
+                </button>
+              );
+            })}
+          </div>
+
           <ResponsiveContainer width="100%" height={400}>
             <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
@@ -116,7 +155,7 @@ const LoadProfilePage: React.FC = () => {
                 labelFormatter={(label) => `${label}`}
                 contentStyle={{ fontSize: 12 }}
               />
-              <Legend />
+              <Legend content={() => null} />
               {data.days.map((day, idx) => (
                 <Line
                   key={day.date}
@@ -126,6 +165,7 @@ const LoadProfilePage: React.FC = () => {
                   dot={false}
                   strokeWidth={1.5}
                   connectNulls={false}
+                  hide={hiddenDays.has(day.date)}
                 />
               ))}
             </LineChart>

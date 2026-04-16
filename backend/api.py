@@ -21,6 +21,7 @@ from loguru import logger
 
 from core.bess.health_check import run_system_health_checks
 from core.bess.influxdb_helper import get_control_sensor_data_batch
+from core.bess.load_profile import get_load_profile
 from core.bess.time_utils import get_period_count
 
 router = APIRouter()
@@ -2544,4 +2545,14 @@ async def dismiss_all_runtime_failures():
         return {"success": True, "message": f"Dismissed {count} runtime failures"}
     except Exception as e:
         logger.error(f"Error dismissing all runtime failures: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/api/load_profile")
+async def load_profile_endpoint(days: int = 7):
+    """Return per-period average load power (W) for the past N days."""
+    try:
+        return convert_keys_to_camel_case({"days": get_load_profile(days)})
+    except Exception as e:
+        logger.error(f"Error fetching load profile: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

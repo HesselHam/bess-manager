@@ -6,8 +6,9 @@ import SavingsAnalysisPage from './pages/SavingsPage';
 import InverterPage from './pages/InverterPage';
 import InsightsPage from './pages/InsightsPage';
 import SystemHealthPage from './pages/SystemHealthPage';
+import LoadProfilePage from './pages/LoadProfilePage';
 import { useSettings } from './hooks/useSettings';
-import { Home, Activity, TrendingUp, Brain, Zap, Sun, Moon, Calendar } from 'lucide-react';
+import { Home, Activity, TrendingUp, Brain, Zap, Sun, Moon, Calendar, BarChart2 } from 'lucide-react';
 
 // An ErrorBoundary component to catch rendering errors
 class ErrorBoundary extends React.Component<
@@ -100,6 +101,14 @@ const Navigation = () => {
       >
         <Brain className="h-5 w-5" />
         <span className="hidden sm:inline">Insights</span>
+      </Link>
+      <Link
+        to="/load-profile"
+        className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center space-x-1 ${isActive('/load-profile')}`}
+        title="Load profiel — verbruik per kwartier over 7 dagen"
+      >
+        <BarChart2 className="h-5 w-5" />
+        <span className="hidden sm:inline">Load</span>
       </Link>
       <Link
         to="/system-health"
@@ -269,6 +278,7 @@ function App() {
                 <Route path="/insights" element={<InsightsPage />} />
                 <Route path="/savings" element={<SavingsAnalysisPage />} />
                 <Route path="/inverter" element={<InverterPage />} />
+                <Route path="/load-profile" element={<LoadProfilePage />} />
                 <Route path="/system-health" element={<SystemHealthPage />} />
                 <Route path="*" element={<Navigate to="/decisions" replace />} />
               </Routes>

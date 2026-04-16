@@ -238,8 +238,8 @@ class EconomicData:
             * sell_price
         )
 
-        # Savings: solar-only baseline minus actual cost
-        hourly_savings = solar_only_cost - hourly_cost
+        # Savings: grid-only baseline minus actual cost (battery + solar value)
+        hourly_savings = grid_only_cost - hourly_cost
 
         return cls(
             buy_price=buy_price,

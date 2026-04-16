@@ -166,10 +166,10 @@ const DecisionsPage: React.FC = () => {
                     <th className="px-2 py-2 text-right font-semibold text-purple-600 dark:text-purple-400 whitespace-nowrap" title="plan / werkelijk %">Dchg%</th>
                     <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap" title="plan / werkelijk kWh">Grid↓</th>
                     <th className="px-2 py-2 text-right font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap" title="plan / werkelijk kWh">Grid↑</th>
-                    <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Kosten</th>
-                    <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Baseline</th>
-                    <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Besparing</th>
-                    <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP reward voor gekozen actie">Reward</th>
+                    <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Cost Grid Only</th>
+                    <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Real Cost</th>
+                    <th className="px-2 py-2 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap" title="plan / werkelijk">Savings</th>
+                    <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP reward voor gekozen actie">DP Reward</th>
                     <th className="px-2 py-2 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap" title="DP waarde functie V[t,i]">V[t,i]</th>
                     <th className="px-2 py-2 text-right font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap" title="Solar forecast correctiefactor">☀ corr.</th>
                     <th className="px-2 py-2 text-left font-semibold text-teal-600 dark:text-teal-400 whitespace-nowrap" title="Load segment (avond/nacht)">Segment</th>
@@ -270,8 +270,8 @@ const DecisionsPage: React.FC = () => {
                           <td className="px-2 py-1 text-right font-mono text-gray-600 dark:text-gray-300">{fmtDual(p.dischargeRate, p.actualDischargeRate, 0, true)}</td>
                           <td className="px-2 py-1 text-right font-mono text-orange-700 dark:text-orange-400">{fmtDual(p.gridImported, p.actualGridImported)}</td>
                           <td className="px-2 py-1 text-right font-mono text-teal-700 dark:text-teal-400">{fmtDual(p.gridExported, p.actualGridExported)}</td>
-                          <td className="px-2 py-1 text-right font-mono">{fmtCostDual(p.hourlyCost, p.actualHourlyCost)}</td>
                           <td className="px-2 py-1 text-right font-mono text-gray-400">{fmtCostDual(p.gridOnlyCost, p.actualGridOnlyCost)}</td>
+                          <td className="px-2 py-1 text-right font-mono">{fmtCostDual(p.hourlyCost, p.actualHourlyCost)}</td>
                           <td className={`px-2 py-1 text-right font-mono font-semibold ${p.hourlySavings > 0 ? 'text-green-700 dark:text-green-400' : p.hourlySavings < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
                             {fmtCostDual(p.hourlySavings, p.actualHourlySavings)}
                           </td>

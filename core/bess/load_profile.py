@@ -54,11 +54,13 @@ def _to_watts(data: dict, sensors: list[str]) -> list[float | None]:
     get_power_sensor_data_batch returns mean_W * 0.25 / 1000 (kWh).
     Reverse: kWh * 4000 = mean_W.
     Sums multiple sensors per period.
+    Keys in data are prefixed with "sensor." by influxdb_helper.
     """
+    keys = [f"sensor.{s}" for s in sensors]
     result: list[float | None] = []
     for period in range(96):
         period_data = data.get(period, {})
-        values = [period_data[s] for s in sensors if s in period_data]
+        values = [period_data[k] for k in keys if k in period_data]
         if values:
             result.append(round(sum(values) * 4000))
         else:

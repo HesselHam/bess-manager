@@ -1,6 +1,6 @@
 name: "BESS Manager"
 description: "Battery Energy Storage System optimization and management"
-version: "7.9.121"
+version: "7.9.122"
 slug: "bess_manager"
 init: false
 arch:
@@ -30,7 +30,7 @@ options:
   home:
     consumption: 3.5                # default hourly consumption in kWh
     currency: "EUR"                 # currency for price display and calculations
-    consumption_strategy: "influxdb_7d_avg"  # "sensor" (HA 48h avg), "fixed", or "influxdb_7d_avg"
+    consumption_strategy: "influxdb_7d_avg"  # "sensor" (HA 48h avg), "fixed", "influxdb_7d_avg", or "influxdb_unique_day_avg"
     history_days: 3                 # Number of past days to keep in decision history (default: 1 = yesterday + today)
     max_fuse_current: 25            # Maximum fuse current in amperes
     voltage: 230                    # Line voltage in volts
@@ -79,6 +79,8 @@ options:
     discharge_tiebreaker_enabled: false  # Break near-ties in favour of LOAD_SUPPORT at high buy prices
     discharge_tiebreaker_epsilon: 0.003  # Epsilon bonus (in currency) added to LOAD_SUPPORT value when buy > cost_basis
     load_forecast_sensor: ""             # Sensor entity ID used for DP consumption forecast (W or kWh sensor, auto-detected)
+    unique_day_avg_lookback_days: 42     # Days to look back for influxdb_unique_day_avg strategy (default: 42)
+    unique_day_avg_min_valid_days: 14    # Minimum valid days required before falling back to influxdb_7d_avg (default: 14)
     consumption_rounding_enabled: false  # Round DP consumption input up to nearest step (true/false)
     consumption_rounding_step: 0.025     # Rounding step in kWh (e.g. 0.025)
     load_segments:
@@ -243,6 +245,8 @@ schema:
     discharge_tiebreaker_enabled: bool?
     discharge_tiebreaker_epsilon: float?
     load_forecast_sensor: str?
+    unique_day_avg_lookback_days: int?
+    unique_day_avg_min_valid_days: int?
     consumption_rounding_enabled: bool?
     consumption_rounding_step: float?
     load_segments:

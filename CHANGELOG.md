@@ -5,6 +5,13 @@ All notable changes to BESS Battery Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.9.122] - 2026-04-17
+
+### Changed
+
+- Rename consumption strategy `influxdb_21d_unique_day_avg` to `influxdb_unique_day_avg`
+- Make lookback window and minimum valid days configurable via `dp.unique_day_avg_lookback_days` (default 42) and `dp.unique_day_avg_min_valid_days` (default 14)
+
 ## [7.9.121] - 2026-04-17
 
 ### Changed

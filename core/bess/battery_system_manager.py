@@ -154,9 +154,9 @@ class BatterySystemManager:
         # Pending pre-calculated result (set by pre_calculate_schedule, consumed by apply_pending_schedule)
         self._pending_result: tuple | None = None
 
-        # Cache for 21d unique-day-avg: (cache_date, all_valid_days)
-        # Reused within the same calendar day to avoid 63 InfluxDB queries per run
-        self._21d_cache: tuple[date, list[tuple[date, list[float]]]] | None = None
+        # Cache for unique-day-avg: (cache_date, all_valid_days)
+        # Reused within the same calendar day to avoid repeated InfluxDB queries per run
+        self._unique_day_cache: tuple[date, list[tuple[date, list[float]]]] | None = None
 
         # Prediction caches (populated by _fetch_predictions)
         self._consumption_predictions: list[float] | None = None
@@ -1162,9 +1162,9 @@ class BatterySystemManager:
         if strategy == "influxdb_7d_avg":
             return self._get_influxdb_7d_avg_forecast()
 
-        if strategy == "influxdb_21d_unique_day_avg":
+        if strategy == "influxdb_unique_day_avg":
             forecast_date = target_date or datetime.now(tz=time_utils.TIMEZONE).date()
-            return self._get_influxdb_21d_unique_day_avg_forecast(forecast_date)
+            return self._get_influxdb_unique_day_avg_forecast(forecast_date)
 
         raise ValueError(f"Unknown consumption_strategy: '{strategy}'")
 
@@ -1241,11 +1241,13 @@ class BatterySystemManager:
 
         return avg_profile
 
-    def _get_influxdb_21d_unique_day_avg_forecast(self, target_date: date) -> list[float]:
-        """Get consumption forecast from InfluxDB 21-day unique-day-of-week average profile.
+    def _get_influxdb_unique_day_avg_forecast(self, target_date: date) -> list[float]:
+        """Get consumption forecast from InfluxDB unique-day-of-week average profile.
 
-        Queries InfluxDB for the past 21 days of the configured load_forecast_sensor.
-        Requires at least 14 valid days of history; falls back to influxdb_7d_avg otherwise.
+        Queries InfluxDB for the past N days of the configured load_forecast_sensor,
+        where N is dp.unique_day_avg_lookback_days (default 42).
+        Requires at least dp.unique_day_avg_min_valid_days valid days (default 14);
+        falls back to influxdb_7d_avg otherwise.
         Returns the average profile for days matching target_date's day of week.
         Sensor type (W or kWh) is auto-detected via detect_load_sensor_type.
         """
@@ -1255,27 +1257,29 @@ class BatterySystemManager:
         target_sensor = dp_config.get("load_forecast_sensor", "")
         if not target_sensor:
             raise ValueError(
-                "influxdb_21d_unique_day_avg strategy requires 'dp.load_forecast_sensor' sensor configured"
+                "influxdb_unique_day_avg strategy requires 'dp.load_forecast_sensor' sensor configured"
             )
+
+        lookback_days = dp_config.get("unique_day_avg_lookback_days", 42)
+        min_valid_days = dp_config.get("unique_day_avg_min_valid_days", 14)
 
         if target_sensor.startswith("sensor."):
             target_sensor = target_sensor[len("sensor."):]
 
         sensor_mode = detect_load_sensor_type(target_sensor)
-        logger.info("influxdb_21d_unique_day_avg: using sensor %s (mode=%s)", target_sensor, sensor_mode)
+        logger.info("influxdb_unique_day_avg: using sensor %s (mode=%s)", target_sensor, sensor_mode)
 
         today = datetime.now(tz=time_utils.TIMEZONE).date()
         target_weekday = target_date.weekday()  # 0=Monday, 6=Sunday
         weekday_name = target_date.strftime("%A")
 
-        # Use cached 21-day data if already fetched today (avoids 63 queries per run)
-        if self._21d_cache is not None and self._21d_cache[0] == today:
-            all_valid_days = self._21d_cache[1]
+        # Use cached data if already fetched today (avoids repeated InfluxDB queries per run)
+        if self._unique_day_cache is not None and self._unique_day_cache[0] == today:
+            all_valid_days = self._unique_day_cache[1]
         else:
-            # Collect all valid day profiles from the past 21 days
             all_valid_days = []
 
-            for days_back in range(1, 22):
+            for days_back in range(1, lookback_days + 1):
                 check_date = today - timedelta(days=days_back)
                 result = get_power_sensor_data_batch([target_sensor], check_date, mode=sensor_mode)
 
@@ -1300,14 +1304,15 @@ class BatterySystemManager:
                     all_valid_days.append((check_date, profile))
                     logger.debug("Got %d periods for %s", periods_found, check_date)
 
-            self._21d_cache = (today, all_valid_days)
+            self._unique_day_cache = (today, all_valid_days)
 
         # Fall back to 7-day avg if insufficient history
-        if len(all_valid_days) < 14:
+        if len(all_valid_days) < min_valid_days:
             logger.warning(
-                "influxdb_21d_unique_day_avg: only %d valid days found (need 14), "
+                "influxdb_unique_day_avg: only %d valid days found (need %d), "
                 "falling back to influxdb_7d_avg",
                 len(all_valid_days),
+                min_valid_days,
             )
             return self._get_influxdb_7d_avg_forecast()
 
@@ -1319,7 +1324,7 @@ class BatterySystemManager:
 
         if not matching_profiles:
             logger.warning(
-                "influxdb_21d_unique_day_avg: no %s data found in history, "
+                "influxdb_unique_day_avg: no %s data found in history, "
                 "using all-day average as fallback",
                 weekday_name,
             )
@@ -1332,7 +1337,7 @@ class BatterySystemManager:
 
         total_kwh = sum(avg_profile)
         logger.info(
-            "InfluxDB 21d unique day avg (%s): %.1f kWh/day from %d matching days",
+            "influxdb_unique_day_avg (%s): %.1f kWh/day from %d matching days",
             weekday_name,
             total_kwh,
             len(matching_profiles),
